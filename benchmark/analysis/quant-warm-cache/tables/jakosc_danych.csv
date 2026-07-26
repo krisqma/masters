@@ -1,0 +1,13 @@
+model,wariant_kwantyzacji,liczba_rekordow,poprawne_generacje,brak_ttft,brak_generation_ms,puste_odpowiedzi,trafienia_cache,odsetek_trafien_cache,min_znakow_odpowiedzi,mediana_znakow_odpowiedzi,max_znakow_odpowiedzi
+gemma3-4b,Q2_K,20,20,0,0,0,20,1.0,34,269.5,309
+gemma3-4b,Q4_0,20,20,0,0,0,20,1.0,34,56.5,146
+gemma3-4b,Q4_K_M,20,20,0,0,0,20,1.0,35,57.5,189
+gemma3-4b,Q8_0,20,20,0,0,0,20,1.0,35,52.5,158
+gemma4-e2b,Q2_K,20,9,11,11,11,9,0.45,0,0.0,613
+gemma4-e2b,Q4_0,20,20,0,0,0,20,1.0,39,75.0,343
+gemma4-e2b,Q4_K_M,20,20,0,0,0,20,1.0,39,50.0,319
+gemma4-e2b,Q8_0,20,20,0,0,0,20,1.0,39,70.5,228
+bielik-4.5b,Q2_K,20,20,0,0,0,20,1.0,160,193.5,213
+bielik-4.5b,Q4_0,20,20,0,0,0,20,1.0,164,294.0,349
+bielik-4.5b,Q4_K_M,20,20,0,0,0,20,1.0,101,287.5,322
+bielik-4.5b,Q8_0,20,20,0,0,0,20,1.0,265,320.0,437

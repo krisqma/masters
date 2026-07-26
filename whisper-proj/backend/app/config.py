@@ -58,13 +58,37 @@ class Settings:
     cors_origins: List[str]
     ollama_url: str
     ollama_model: str
+    ollama_keep_alive: str
+    ollama_read_timeout_seconds: int
+    chat_history_max_messages: int
+    student_keep_warm_enabled: bool
+    student_keep_warm_interval_seconds: int
     context_service_url: str
+    tts_voice: str
+    tts_rate: str
+    tts_max_chars: int
 
 
 DEFAULT_CORS_ORIGINS = [
     "http://127.0.0.1:5173",
     "http://localhost:5173",
 ]
+
+# Fallback when Context Service is down — must match context_service STUDENT_STATIC_PREFIX.
+FALLBACK_STUDENT_STATIC_PREFIX = """\
+Jesteś Wilguś — przyjazny ptasi gospodarz domku gościnnego (wilga = oriole; „Wilguś” to zdrobnienie).
+Mówisz o sobie w pierwszej osobie, krótko i ciepło, po polsku; zwykle 1–2 zdania.
+Pomagasz gościowi zrozumieć komfort domu (temperatura, wilgotność, ruch, światło) na podstawie danych z czujników.
+Nie sterujesz urządzeniami i nie wykonujesz akcji — tylko informujesz i rozmawiasz.
+Dane z kontekstu domu cytuj WYŁĄCZNIE, gdy użytkownik pyta o stan domu, pomieszczenie, komfort albo wprost o odczyty.
+Nie doklejaj temperatur ani innych odczytów „przy okazji” do odpowiedzi o czymś innym.
+Gdy pytają kim jesteś, skąd nazwa, gdzie jesteś albo o co chodzi w domku — odpowiadaj z tej persony, BEZ liczb z czujników.
+Gdy wypowiedź jest niejasna, bezsensowna albo wygląda na błąd STT — nie zgaduj intencji sensorowej; krótko poproś o powtórzenie lub odpowiedz w charakterze bez odczytów.
+O stanie domu nie zgaduj, nie uśredniaj i nie zmyślaj metryk ani pomieszczeń spoza kontekstu; przy braku danych powiedz to wprost.
+Gdy pytają z jakich pomieszczeń składa się mieszkanie — wymień WSZYSTKIE z listy „Pomieszczenia mieszkania” w kontekście, nic nie pomijaj i nic nie dodawaj.
+Jeśli dane są sprzeczne lub oznaczone jako stare, zaznacz niepewność.
+Uwzględniaj wcześniejsze wiadomości w rozmowie (dopowiedzenia, korektury).
+Przy literówkach STT mapuj nazwy na pomieszczenia z listy w kontekście (np. „Sanon” → najbliższa sensowna nazwa z listy), gdy sens jest oczywisty."""
 
 
 def get_settings() -> Settings:
@@ -75,10 +99,23 @@ def get_settings() -> Settings:
         whisper_compute_type=os.getenv("WHISPER_COMPUTE_TYPE", "int8"),
         whisper_language=os.getenv("WHISPER_LANGUAGE", "pl"),
         whisper_beam_size=_as_int(os.getenv("WHISPER_BEAM_SIZE"), 5),
-        whisper_vad_filter=_as_bool(os.getenv("WHISPER_VAD_FILTER"), True),
+        # Default off: VAD often wipes short Polish wake+question clips to empty.
+        whisper_vad_filter=_as_bool(os.getenv("WHISPER_VAD_FILTER"), False),
         max_upload_mb=_as_int(os.getenv("MAX_UPLOAD_MB"), 25),
         cors_origins=_as_csv_list(os.getenv("CORS_ORIGINS"), DEFAULT_CORS_ORIGINS),
         ollama_url=os.getenv("OLLAMA_URL", "http://192.168.1.173:11434/api/chat"),
-        ollama_model=os.getenv("OLLAMA_MODEL", "wilgus-pl"),
+        ollama_model=os.getenv("OLLAMA_MODEL", "gemma3:4b"),
+        ollama_keep_alive=os.getenv("OLLAMA_KEEP_ALIVE", "30m"),
+        ollama_read_timeout_seconds=_as_int(os.getenv("OLLAMA_READ_TIMEOUT_SECONDS"), 120),
+        # Last N user/assistant turns sent with each chat (keeps RPi TTFT in check).
+        chat_history_max_messages=_as_int(os.getenv("CHAT_HISTORY_MAX_MESSAGES"), 6),
+        student_keep_warm_enabled=_as_bool(os.getenv("STUDENT_KEEP_WARM_ENABLED"), True),
+        # Ping below OLLAMA_KEEP_ALIVE so the model + system prefix stay hot.
+        student_keep_warm_interval_seconds=_as_int(
+            os.getenv("STUDENT_KEEP_WARM_INTERVAL_SECONDS"), 600
+        ),
         context_service_url=os.getenv("CONTEXT_SERVICE_URL", "http://127.0.0.1:8001"),
+        tts_voice=os.getenv("TTS_VOICE", "pl-PL-ZofiaNeural"),
+        tts_rate=os.getenv("TTS_RATE", "+0%"),
+        tts_max_chars=_as_int(os.getenv("TTS_MAX_CHARS"), 1000),
     )

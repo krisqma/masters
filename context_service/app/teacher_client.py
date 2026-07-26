@@ -18,12 +18,15 @@ class TeacherInsight:
 
 TEACHER_SYSTEM_PROMPT = (
     "Jesteś analitykiem IoT smart-home. "
-    "Otrzymujesz surowe odczyty z czujników mieszkania. "
-    "Twoim zadaniem jest zwięzłe podsumowanie stanu mieszkania w 3-5 zdaniach po polsku. "
-    "Skup się na: temperaturach w pokojach, zużyciu energii, otwartych oknach/drzwiach, "
-    "obecności osób, jakości powietrza. "
+    "Otrzymujesz punktowy snapshot odczytów z czujników mieszkania z jednego znacznika czasu. "
+    "Nie zakładaj wartości dla brakujących pól i nie mieszaj stanów z innych momentów. "
+    "Odpowiadaj WYŁĄCZNIE po polsku (bez innych języków). "
+    "Twoim zadaniem jest zwięzłe podsumowanie stanu mieszkania w 3-5 zdaniach. "
+    "Skup się na: temperaturach w pomieszczeniach (w tym łazience, jeśli jest w snapshocie), "
+    "zużyciu energii, otwartych oknach/drzwiach, obecności osób, jakości powietrza. "
+    "Używaj tylko nazw pomieszczeń z snapshota — nie zmyślaj salonu ani innych pokoi. "
     "Jeśli coś jest nietypowe (wysoka temperatura, duże zużycie energii, otwarte okno nocą) — zaznacz to. "
-    "Nie powtarzaj surowych liczb — interpretuj je."
+    "Nie powtarzaj wszystkich surowych liczb — interpretuj je."
 )
 
 
@@ -43,6 +46,7 @@ async def ask_teacher(
             {"role": "user", "content": sensor_text},
         ],
         "stream": False,
+        "keep_alive": "30m",
     }
 
     timeout = httpx.Timeout(connect=10.0, read=timeout_seconds, write=30.0, pool=30.0)

@@ -1,8 +1,8 @@
-"""Reads IoT sensor data from CSV and produces human-readable snapshots for the Teacher.
+"""Reads IoT sensor data from CSV and produces point-in-time snapshots for the Teacher.
 
 Simulation mode: the CSV contains ~88 days of data at 5-min intervals (~25 200 rows).
 SensorSimulator loads the entire file once, then advances a cursor on each call,
-simulating real-time progression through the dataset.
+simulating real-time progression through the dataset one timestamp at a time.
 """
 
 from __future__ import annotations
@@ -26,8 +26,11 @@ ROOM_LABELS: Dict[str, str] = {
     "small_room": "Mały pokój",
     "hallway": "Korytarz",
     "outside": "Na zewnątrz",
-    "localization": "Lokalizacja",
+    "localization": "Instalacja ogólna",
 }
+
+# Rooms that make up the apartment (exclude outdoor + whole-house meters).
+APARTMENT_ROOM_KEYS = ("bathroom", "hallway", "large_room", "small_room")
 
 INTERESTING_METRICS = {
     "temperature", "humidity", "pressure", "power", "energy",
@@ -52,7 +55,9 @@ class SensorSnapshot:
         if not self.readings:
             return f"[{self.timestamp}] Brak odczytów z czujników."
 
-        lines = [f"Stan czujników na {self.timestamp} (wiersz {self.cursor}/{self.total_rows}):"]
+        lines = [
+            f"Snapshot czujników z {self.timestamp} (wiersz {self.cursor}/{self.total_rows}):",
+        ]
         for room_key, sensors in sorted(self.readings.items()):
             room_name = ROOM_LABELS.get(room_key, room_key)
             lines.append(f"\n  {room_name}:")
@@ -136,52 +141,39 @@ def _format_value(metric: str, raw: str) -> str:
 
 
 def _build_snapshot(
-    header: List[str],
-    rows: List[List[str]],
+    row: List[str],
     col_info: List[Optional[tuple[str, str, str]]],
-    cursor: int,
+    row_number: int,
     total_rows: int,
-    lookback: int = 200,
 ) -> SensorSnapshot:
-    """Build a snapshot from a window of rows ending at `cursor`."""
-    window_start = max(0, cursor - lookback)
-    window = rows[window_start:cursor]
+    """Build a snapshot from a single CSV row."""
+    if not row:
+        return SensorSnapshot(timestamp="?", readings={}, row_count=0, cursor=row_number, total_rows=total_rows)
 
-    if not window:
-        return SensorSnapshot(timestamp="?", readings={}, row_count=0, cursor=cursor, total_rows=total_rows)
-
-    timestamp = window[-1][0] if window[-1][0] else "?"
-
-    seen: set[tuple[str, str]] = set()
+    timestamp = row[0] if row[0] else "?"
     readings: Dict[str, Dict[str, str]] = {}
 
-    for row in reversed(window):
-        for i, cell in enumerate(row):
-            if i >= len(col_info) or col_info[i] is None:
-                continue
-            cell = cell.strip()
-            if not cell:
-                continue
+    for i, cell in enumerate(row):
+        if i >= len(col_info) or col_info[i] is None:
+            continue
+        cell = cell.strip()
+        if not cell:
+            continue
 
-            room, device_desc, metric = col_info[i]
-            key = (room, f"{device_desc}_{metric}")
-            if key in seen:
-                continue
-            seen.add(key)
+        room, device_desc, metric = col_info[i]
+        formatted = _format_value(metric, cell)
+        if not formatted:
+            continue
 
-            formatted = _format_value(metric, cell)
-            if not formatted:
-                continue
-
-            label_metric = METRIC_LABELS.get(metric, metric)
-            label = f"{device_desc} – {label_metric}"
-            readings.setdefault(room, {})[label] = formatted
+        label_metric = METRIC_LABELS.get(metric, metric)
+        label = f"{device_desc} – {label_metric}"
+        readings.setdefault(room, {})[label] = formatted
 
     return SensorSnapshot(
         timestamp=timestamp,
         readings=readings,
-        row_count=len(window),
-        cursor=cursor,
+        row_count=1,
+        cursor=row_number,
         total_rows=total_rows,
     )
 
@@ -190,20 +182,27 @@ class SensorSimulator:
     """Simulates real-time sensor data by advancing through a CSV file.
 
     Each call to `next_snapshot()` moves the cursor forward by `step` rows
-    (default 1 = 5 minutes of simulated time per refresh cycle).
+    (default 1 = 5 minutes of simulated time per refresh cycle)
+    and returns exactly one coherent timestamped row.
     When the cursor reaches the end, it wraps around to the beginning.
     """
 
-    def __init__(self, csv_path: Path, step: int = 1, lookback: int = 200) -> None:
+    def __init__(self, csv_path: Path, step: int = 1) -> None:
         self._csv_path = csv_path
         self._step = step
-        self._lookback = lookback
 
         self._header: List[str] = []
         self._rows: List[List[str]] = []
         self._col_info: List[Optional[tuple[str, str, str]]] = []
+        self._apartment_rooms: List[str] = []
         self._cursor: int = 0
         self._loaded = False
+
+    @property
+    def apartment_rooms(self) -> List[str]:
+        """Stable Polish labels of indoor rooms defined in the CSV schema."""
+        self._load()
+        return list(self._apartment_rooms)
 
     def _load(self) -> None:
         """Load CSV into memory (once)."""
@@ -225,10 +224,20 @@ class SensorSimulator:
             self._rows = list(reader)
 
         self._col_info = [_parse_column(h) for h in self._header]
-        # Start cursor at a point where lookback has enough data
-        self._cursor = min(self._lookback, len(self._rows))
+        rooms_in_schema = {
+            info[0] for info in self._col_info if info is not None and info[0] in APARTMENT_ROOM_KEYS
+        }
+        self._apartment_rooms = [
+            ROOM_LABELS[key] for key in APARTMENT_ROOM_KEYS if key in rooms_in_schema
+        ]
+        self._cursor = 1 if self._rows else 0
         self._loaded = True
-        logger.info("CSV loaded: %d rows, cursor starts at %d", len(self._rows), self._cursor)
+        logger.info(
+            "CSV loaded: %d rows, rooms=%s, cursor starts at %d",
+            len(self._rows),
+            ",".join(self._apartment_rooms),
+            self._cursor,
+        )
 
     def next_snapshot(self) -> SensorSnapshot:
         """Advance cursor and return snapshot at current position."""
@@ -237,19 +246,35 @@ class SensorSimulator:
         if not self._rows:
             return SensorSnapshot(timestamp="?", readings={}, row_count=0, cursor=0, total_rows=0)
 
+        row_number = min(max(self._cursor, 1), len(self._rows))
         snapshot = _build_snapshot(
-            self._header,
-            self._rows,
+            self._rows[row_number - 1],
             self._col_info,
-            cursor=self._cursor,
+            row_number=row_number,
             total_rows=len(self._rows),
-            lookback=self._lookback,
         )
 
         # Advance cursor
         self._cursor += self._step
         if self._cursor > len(self._rows):
-            self._cursor = min(self._lookback, len(self._rows))
+            self._cursor = 1
             logger.info("CSV simulation wrapped around to the beginning.")
+
+        # Prefixed inventory so Teacher always sees the full room set.
+        if self._apartment_rooms:
+            inventory = (
+                "Pomieszczenia mieszkania (pełna lista): "
+                + ", ".join(self._apartment_rooms)
+                + "."
+            )
+            snapshot_text_prefix = inventory + "\n"
+            # Attach via to_text monkey-patch-free: prepend in to_text by storing on object
+            object.__setattr__  # no-op keep linter calm if frozen — SensorSnapshot is not frozen
+            original_to_text = snapshot.to_text
+
+            def to_text_with_rooms() -> str:
+                return snapshot_text_prefix + original_to_text()
+
+            snapshot.to_text = to_text_with_rooms  # type: ignore[method-assign]
 
         return snapshot

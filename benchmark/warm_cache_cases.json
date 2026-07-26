@@ -1,0 +1,86 @@
+{
+  "source_comment": "system_prompt skopiowany z golden.jsonl, case_id=factual_01. Pytania sa celowo oparte na jednym stalym kontekście, zeby testowac warm prefix cache, a nie jakosc odpowiedzi.",
+  "system_prompt": "Jesteś asystentem smart-home. Stan mieszkania na 2026-01-14 02:40:00 UTC:\n- salon: temperatura (czujnik powietrza) = 11.9 °C\n- salon: wilgotność (czujnik powietrza) = 32.5 %\n- sypialnia: temperatura = 14.2 °C\n- sypialnia: wilgotność = 23.1 %\n- przedpokój: temperatura = 28.1 °C\n- przedpokój: wilgotność = 12.0 %\n- łazienka: bojler moc = 0.0 W\n- łazienka: grzejnik moc = 402.8 W\n- sypialnia: grzejnik moc = 0.0 W\n- salon: gniazdko 3 moc = 0.0 W\n- salon: gniazdko 5 moc = 0.0 W",
+  "questions": [
+    {
+      "case_id": "warm_01",
+      "question": "Jaka jest temperatura w salonie?"
+    },
+    {
+      "case_id": "warm_02",
+      "question": "Jaka jest wilgotność w salonie?"
+    },
+    {
+      "case_id": "warm_03",
+      "question": "Jaka jest temperatura w sypialni?"
+    },
+    {
+      "case_id": "warm_04",
+      "question": "Jaka jest wilgotność w sypialni?"
+    },
+    {
+      "case_id": "warm_05",
+      "question": "Jaka jest temperatura w przedpokoju?"
+    },
+    {
+      "case_id": "warm_06",
+      "question": "Jaka jest wilgotność w przedpokoju?"
+    },
+    {
+      "case_id": "warm_07",
+      "question": "Które pomieszczenie jest najcieplejsze?"
+    },
+    {
+      "case_id": "warm_08",
+      "question": "Które pomieszczenie jest najchłodniejsze?"
+    },
+    {
+      "case_id": "warm_09",
+      "question": "Które pomieszczenie ma najwyższą wilgotność?"
+    },
+    {
+      "case_id": "warm_10",
+      "question": "Które pomieszczenie ma najniższą wilgotność?"
+    },
+    {
+      "case_id": "warm_11",
+      "question": "Jaka jest moc bojlera w łazience?"
+    },
+    {
+      "case_id": "warm_12",
+      "question": "Jaka jest moc grzejnika w łazience?"
+    },
+    {
+      "case_id": "warm_13",
+      "question": "Czy grzejnik w sypialni pobiera moc?"
+    },
+    {
+      "case_id": "warm_14",
+      "question": "Czy bojler w łazience jest włączony?"
+    },
+    {
+      "case_id": "warm_15",
+      "question": "Czy gniazdko 3 w salonie pobiera moc?"
+    },
+    {
+      "case_id": "warm_16",
+      "question": "Czy gniazdko 5 w salonie pobiera moc?"
+    },
+    {
+      "case_id": "warm_17",
+      "question": "Które urządzenie pobiera największą moc?"
+    },
+    {
+      "case_id": "warm_18",
+      "question": "Ile wynosi różnica temperatury między przedpokojem a salonem?"
+    },
+    {
+      "case_id": "warm_19",
+      "question": "Ile wynosi różnica wilgotności między salonem a przedpokojem?"
+    },
+    {
+      "case_id": "warm_20",
+      "question": "Podaj krótko aktualny stan temperatur i wilgotności w mieszkaniu."
+    }
+  ]
+}

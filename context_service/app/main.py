@@ -63,18 +63,29 @@ def health() -> dict:
 
 @app.get("/api/context", tags=["context"])
 def get_context() -> dict:
-    """Returns the current Teacher insight and pre-built system prompt.
+    """Returns Student prompt parts for prefix-cache-friendly chat.
 
-    The whisper backend fetches this and injects system_prompt into the
-    Student's Ollama messages array.
+    ``static_prefix`` is always identical (KV-cache friendly).
+    ``dynamic_context`` changes only when the Teacher refreshes.
+    Whisper backend should send: system=static_prefix, user=dynamic+question.
     """
+    base = {
+        "static_prefix": engine.static_prefix,
+        "dynamic_context": engine.dynamic_context,
+        "system_prompt": engine.system_prompt,
+    }
     if not engine.is_ready:
-        return {"status": "pending", "system_prompt": None, "insight": None}
+        return {
+            **base,
+            "status": "pending",
+            "insight": None,
+            "source_timestamp": None,
+        }
 
     insight = engine.latest_insight
     return {
+        **base,
         "status": "ready",
         "source_timestamp": insight.source_timestamp if insight else None,
         "insight": insight.summary if insight else None,
-        "system_prompt": engine.system_prompt,
     }

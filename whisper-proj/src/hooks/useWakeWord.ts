@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 interface UseWakeWordOptions {
   enabled: boolean
   onWakeWordDetected: () => void
+  /** Hard failures only (permission / unsupported). Soft network blips are handled internally. */
   onError?: (message: string) => void
 }
 
@@ -49,13 +50,22 @@ type WindowWithSpeechRecognition = Window & {
 }
 
 const WAKE_WORD_PATTERNS = [
+  'hej wilgus',
   'hej wilga',
   'hej wilgo',
   'hej wilko',
+  'ej wilgus',
   'ej wilga',
   'ej wilgo',
   'ej wilko',
+  'hey wilgus',
+  'hey wilga',
 ]
+
+/** Chrome often emits these during normal continuous listening — never spam the UI. */
+const SOFT_ERRORS = new Set(['aborted', 'no-speech', 'network'])
+
+const HARD_ERRORS = new Set(['not-allowed', 'service-not-allowed', 'audio-capture'])
 
 const normalizeTranscript = (value: string) =>
   value
@@ -99,6 +109,9 @@ export function useWakeWord({
   const enabledRef = useRef(enabled)
   const wakeWordCallbackRef = useRef(onWakeWordDetected)
   const errorCallbackRef = useRef(onError)
+  const restartTimerRef = useRef<number | null>(null)
+  const networkFailStreakRef = useRef(0)
+  const hardErrorReportedRef = useRef(false)
 
   useEffect(() => {
     enabledRef.current = enabled
@@ -112,48 +125,64 @@ export function useWakeWord({
     errorCallbackRef.current = onError
   }, [onError])
 
+  const clearRestartTimer = useCallback(() => {
+    if (restartTimerRef.current !== null) {
+      window.clearTimeout(restartTimerRef.current)
+      restartTimerRef.current = null
+    }
+  }, [])
+
   const setListening = useCallback((value: boolean) => {
     isListeningRef.current = value
     setIsListening(value)
   }, [])
 
-  const start = useCallback(() => {
+  const startRecognition = useCallback(() => {
     const recognition = recognitionRef.current
-    if (!recognition || isListeningRef.current) {
+    if (!recognition || !enabledRef.current || isListeningRef.current) {
       return
     }
 
     shouldRestartRef.current = true
-
     try {
       recognition.start()
       setListening(true)
-    } catch (error) {
-      shouldRestartRef.current = false
+    } catch {
+      // Browser may still be tearing down the previous session.
       setListening(false)
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Nie udało się uruchomić nasłuchiwania wake word.'
-      errorCallbackRef.current?.(message)
+      clearRestartTimer()
+      restartTimerRef.current = window.setTimeout(() => {
+        restartTimerRef.current = null
+        if (shouldRestartRef.current && enabledRef.current) {
+          startRecognition()
+        }
+      }, 400)
     }
-  }, [setListening])
+  }, [clearRestartTimer, setListening])
+
+  const start = useCallback(() => {
+    networkFailStreakRef.current = 0
+    hardErrorReportedRef.current = false
+    clearRestartTimer()
+    startRecognition()
+  }, [clearRestartTimer, startRecognition])
 
   const stop = useCallback(() => {
+    clearRestartTimer()
+    shouldRestartRef.current = false
+    setListening(false)
+
     const recognition = recognitionRef.current
     if (!recognition) {
       return
     }
-
-    shouldRestartRef.current = false
-    setListening(false)
 
     try {
       recognition.stop()
     } catch {
       // Ignored intentionally - stop can throw when recognition has not started yet.
     }
-  }, [setListening])
+  }, [clearRestartTimer, setListening])
 
   useEffect(() => {
     if (!recognitionCtor) {
@@ -167,6 +196,7 @@ export function useWakeWord({
     recognition.maxAlternatives = 1
 
     recognition.onresult = (event) => {
+      networkFailStreakRef.current = 0
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
         const transcript = event.results[index]?.[0]?.transcript ?? ''
         if (!transcript) {
@@ -175,8 +205,13 @@ export function useWakeWord({
 
         if (hasWakeWord(transcript)) {
           shouldRestartRef.current = false
+          clearRestartTimer()
           setListening(false)
-          recognition.stop()
+          try {
+            recognition.stop()
+          } catch {
+            // ignore
+          }
           wakeWordCallbackRef.current()
           break
         }
@@ -184,14 +219,42 @@ export function useWakeWord({
     }
 
     recognition.onerror = (event) => {
-      if (event.error === 'aborted') {
+      const code = event.error ?? ''
+
+      if (SOFT_ERRORS.has(code)) {
+        if (code === 'network') {
+          networkFailStreakRef.current += 1
+          // After repeated network failures Chrome will just keep failing — slow down restarts.
+          if (networkFailStreakRef.current >= 8 && !hardErrorReportedRef.current) {
+            hardErrorReportedRef.current = true
+            errorCallbackRef.current?.(
+              'Wake word: Chrome Speech Recognition traci sieć. Sprawdź internet albo użyj przycisku nagrywania.',
+            )
+          }
+        }
         return
       }
 
-      const message = event.error
-        ? `Błąd nasłuchiwania (${event.error}). ${event.message ?? ''}`.trim()
-        : 'Wystąpił błąd nasłuchiwania.'
-      errorCallbackRef.current?.(message)
+      if (HARD_ERRORS.has(code)) {
+        shouldRestartRef.current = false
+        clearRestartTimer()
+        setListening(false)
+        if (!hardErrorReportedRef.current) {
+          hardErrorReportedRef.current = true
+          errorCallbackRef.current?.(
+            code === 'not-allowed' || code === 'service-not-allowed'
+              ? 'Brak zgody na mikrofon dla wake word. Użyj przycisku albo odblokuj uprawnienia.'
+              : `Błąd nasłuchiwania (${code}).`,
+          )
+        }
+        return
+      }
+
+      // Unknown errors: report once, keep trying with backoff via onend.
+      if (!hardErrorReportedRef.current) {
+        hardErrorReportedRef.current = true
+        errorCallbackRef.current?.(`Błąd nasłuchiwania (${code || 'unknown'}).`)
+      }
     }
 
     recognition.onend = () => {
@@ -200,18 +263,23 @@ export function useWakeWord({
         return
       }
 
-      try {
-        recognition.start()
-        setListening(true)
-      } catch {
-        // Ignored intentionally - the browser may still release microphone resources.
-      }
+      const streak = networkFailStreakRef.current
+      // Backoff: 300ms → ~5s cap so we don't hammer Chrome/Google on network blips.
+      const delayMs = Math.min(5000, 300 * 2 ** Math.min(streak, 4))
+      clearRestartTimer()
+      restartTimerRef.current = window.setTimeout(() => {
+        restartTimerRef.current = null
+        if (shouldRestartRef.current && enabledRef.current) {
+          startRecognition()
+        }
+      }, delayMs)
     }
 
     recognitionRef.current = recognition
 
     return () => {
       shouldRestartRef.current = false
+      clearRestartTimer()
       recognition.onresult = null
       recognition.onerror = null
       recognition.onend = null
@@ -223,7 +291,7 @@ export function useWakeWord({
       recognitionRef.current = null
       setListening(false)
     }
-  }, [recognitionCtor, setListening])
+  }, [clearRestartTimer, recognitionCtor, setListening, startRecognition])
 
   useEffect(() => {
     if (!isSupported) {

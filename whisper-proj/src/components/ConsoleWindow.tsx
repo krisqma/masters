@@ -6,11 +6,13 @@ interface ConsoleWindowProps {
 }
 
 const roleClassName: Record<ChatMessage['role'], string> = {
+  system: 'console-line-system',
   user: 'console-line-user',
   wilga: 'console-line-wilga',
 }
 
 const roleLabel: Record<ChatMessage['role'], string> = {
+  system: 'System',
   user: 'Ty',
   wilga: 'Wilga',
 }
@@ -36,7 +38,7 @@ export function ConsoleWindow({ messages }: ConsoleWindowProps) {
       <div ref={containerRef} className="console-content">
         {messages.length === 0 ? (
           <p className="console-empty">
-            Oczekiwanie na pierwszą wiadomość. Powiedz "hej wilga" albo użyj przycisku.
+            Oczekiwanie na pierwszą wiadomość. Powiedz „hej wilguś” albo kliknij Wilgusia.
           </p>
         ) : (
           <ul className="console-list">

@@ -1,59 +1,78 @@
+import type { AudioInputDevice } from '../utils/audioDevices'
 import type { AppStatus } from '../types'
 
 interface VoiceControlsProps {
   status: AppStatus
-  isRecording: boolean
   isWakeWordSupported: boolean
   isWakeWordListening: boolean
-  onToggleRecording: () => void
-}
-
-const statusClassName: Record<AppStatus, string> = {
-  IDLE: 'status-idle',
-  LISTENING_WAKE_WORD: 'status-listening',
-  RECORDING: 'status-recording',
-  PROCESSING: 'status-processing',
+  devices: AudioInputDevice[]
+  deviceId: string
+  onDeviceChange: (deviceId: string) => void
+  onNewConversation: () => void
+  followUpSecondsLeft?: number | null
 }
 
 export function VoiceControls({
   status,
-  isRecording,
   isWakeWordSupported,
   isWakeWordListening,
-  onToggleRecording,
+  devices,
+  deviceId,
+  onDeviceChange,
+  onNewConversation,
+  followUpSecondsLeft = null,
 }: VoiceControlsProps) {
-  const buttonLabel = isRecording ? 'Zatrzymaj' : 'Rozpocznij nasłuchiwanie'
-  const isButtonDisabled = status === 'PROCESSING'
+  const busy =
+    status === 'RECORDING' || status === 'PROCESSING' || status === 'SPEAKING'
 
-  let statusText = ''
+  let hint = ''
   if (status === 'LISTENING_WAKE_WORD') {
-    statusText = isWakeWordListening
-      ? "Oczekuję na 'hej wilga'..."
-      : 'Inicjalizuję nasłuchiwanie...'
-  }
-  if (status === 'RECORDING') {
-    statusText = 'Nagrywam...'
-  }
-  if (status === 'PROCESSING') {
-    statusText = 'Przetwarzam i generuję odpowiedź...'
-  }
-  if (status === 'IDLE') {
-    statusText = isWakeWordSupported
-      ? 'Tryb gotowości. Możesz użyć przycisku.'
-      : 'Tryb ręczny. Web Speech API nie jest dostępne.'
+    hint = isWakeWordListening
+      ? 'Nasłuch wake word aktywny'
+      : isWakeWordSupported
+        ? 'Uruchamiam wake word…'
+        : 'Wake word niedostępny — użyj kliknięcia'
+  } else if (status === 'LISTENING_FOLLOW_UP') {
+    const seconds =
+      typeof followUpSecondsLeft === 'number' ? followUpSecondsLeft : 30
+    hint = `Follow-up: ${seconds} s`
+  } else if (status === 'IDLE') {
+    hint = 'Tryb ręczny — kliknij Wilgusia'
   }
 
   return (
-    <section className="voice-controls">
+    <section className="voice-toolbar">
+      <div className="voice-toolbar-left">
+        {hint ? <p className="voice-hint">{hint}</p> : null}
+        <label className="mic-picker">
+          <span>Mikrofon</span>
+          <select
+            value={deviceId}
+            disabled={busy}
+            onChange={(event) => onDeviceChange(event.target.value)}
+          >
+            {devices.length === 0 ? (
+              <option value="">Kliknij Wilgusia (zgoda na mic)</option>
+            ) : (
+              devices.map((device) => (
+                <option key={device.deviceId} value={device.deviceId}>
+                  {device.label}
+                </option>
+              ))
+            )}
+          </select>
+        </label>
+      </div>
+
       <button
         type="button"
-        className={`record-button ${isRecording ? 'record-button-stop' : 'record-button-start'}`}
-        onClick={onToggleRecording}
-        disabled={isButtonDisabled}
+        className="toolbar-button"
+        onClick={onNewConversation}
+        disabled={busy}
+        title="Wyczyść historię rozmowy"
       >
-        {buttonLabel}
+        Nowa rozmowa
       </button>
-      <p className={`status-chip ${statusClassName[status]}`}>{statusText}</p>
     </section>
   )
 }

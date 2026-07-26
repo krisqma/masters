@@ -1,0 +1,8 @@
+.env
+.venv/
+results/
+golden.jsonl
+report.html
+optuna.db
+__pycache__/
+*.pyc
