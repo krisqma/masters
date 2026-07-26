@@ -50,6 +50,7 @@ class SensorSnapshot:
     row_count: int
     cursor: int  # current position in the CSV
     total_rows: int
+    apartment_rooms: Optional[List[str]] = None
 
     def to_text(self) -> str:
         if not self.readings:
@@ -58,6 +59,12 @@ class SensorSnapshot:
         lines = [
             f"Snapshot czujników z {self.timestamp} (wiersz {self.cursor}/{self.total_rows}):",
         ]
+        if self.apartment_rooms:
+            lines.append(
+                "Pomieszczenia mieszkania (pełna lista): "
+                + ", ".join(self.apartment_rooms)
+                + "."
+            )
         for room_key, sensors in sorted(self.readings.items()):
             room_name = ROOM_LABELS.get(room_key, room_key)
             lines.append(f"\n  {room_name}:")
@@ -175,6 +182,7 @@ def _build_snapshot(
         row_count=1,
         cursor=row_number,
         total_rows=total_rows,
+        apartment_rooms=None,
     )
 
 
@@ -253,28 +261,12 @@ class SensorSimulator:
             row_number=row_number,
             total_rows=len(self._rows),
         )
+        snapshot.apartment_rooms = list(self._apartment_rooms)
 
         # Advance cursor
         self._cursor += self._step
         if self._cursor > len(self._rows):
             self._cursor = 1
             logger.info("CSV simulation wrapped around to the beginning.")
-
-        # Prefixed inventory so Teacher always sees the full room set.
-        if self._apartment_rooms:
-            inventory = (
-                "Pomieszczenia mieszkania (pełna lista): "
-                + ", ".join(self._apartment_rooms)
-                + "."
-            )
-            snapshot_text_prefix = inventory + "\n"
-            # Attach via to_text monkey-patch-free: prepend in to_text by storing on object
-            object.__setattr__  # no-op keep linter calm if frozen — SensorSnapshot is not frozen
-            original_to_text = snapshot.to_text
-
-            def to_text_with_rooms() -> str:
-                return snapshot_text_prefix + original_to_text()
-
-            snapshot.to_text = to_text_with_rooms  # type: ignore[method-assign]
 
         return snapshot

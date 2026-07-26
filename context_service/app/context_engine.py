@@ -159,7 +159,9 @@ class ContextEngine:
         )
 
         self._latest_insight = insight
-        self._latest_rooms = snapshot.apartment_rooms()
+        self._latest_rooms = list(
+            snapshot.apartment_rooms or self._simulator.apartment_rooms
+        )
         self._ready.set()
         logger.info(
             "Context refreshed (timestamp=%s, rooms=%s, insight=%d chars)",
