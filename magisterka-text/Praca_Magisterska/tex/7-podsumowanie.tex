@@ -1,0 +1,137 @@
+\newpage
+\section{Podsumowanie}
+
+\subsection{Wnioski z przeprowadzonych badań}
+
+Część badawcza (rozdział~\ref{sec:modele}) przebiegała jako sekwencja czterech
+kolejnych odkryć, z~których każde ukierunkowywało następny eksperyment. Uzyskane
+wyniki pozwoliły sformułować pięć wniosków, które łącznie potwierdzają, że
+uruchomienie użytecznego asystenta głosowego opartego na małym modelu językowym
+(SLM) na urządzeniu brzegowym klasy Raspberry~Pi~5 jest wykonalne.
+
+Po pierwsze, stabilność termiczna platformy brzegowej okazała się warunkiem
+koniecznym wiarygodnego pomiaru. Instalacja aktywnego chłodzenia sterowanego
+GPIO zredukowała udział dławienia termicznego ze~100\% (Run~1) do~0\% (Run~2),
+dzięki czemu ranking modeli przestał odzwierciedlać odporność na throttling,
+a~zaczął mierzyć jakość semantyczną. Model docelowy \texttt{gemma3:4b} awansował
+z~czwartego na pierwsze miejsce: \emph{composite score} wzrósł z~0{,}497 do~0{,}806
+($+62{,}3\%$), a~mediana E2E skróciła się z~57\,584~ms do~31\,742~ms
+($1{,}81\times$ szybciej) --- por.~tabele~\ref{tab:ranking_run1}
+i~\ref{tab:ranking_run2}.
+
+Po drugie, analiza statystyczna Run~3 wykazała, że o~wyniku decyduje przede
+wszystkim flaga halucynacji: sama \texttt{hallucination\_flag} wyjaśnia
+$R^2 = 0{,}9922$ wariancji \emph{composite score}, podczas gdy hiperparametry
+inferencji zaledwie $R^2 = 0{,}2997$ (rysunek~\ref{fig:regression_r2}). Wniosek
+ten jest pozytywny w~sensie metodologicznym: badanie precyzyjnie zlokalizowało
+właściwą dźwignię optymalizacji, wskazując, że wysiłek należy kierować na wybór
+modelu i~modyfikację jego wag, a~nie na strojenie parametrów generacji.
+
+Po trzecie, kwantyzacja wag okazała się skuteczną i~bezpieczną metodą
+przyspieszenia generacji. Zaprojektowana metodyka \emph{warm-cache} pozwoliła
+wyizolować \emph{generation\_ms} spod maskującego wpływu prefill (TTFT)
+i~zmierzyć rzeczywisty efekt precyzji wag. Wariant Q4\_K\_M zapewnił
+$1{,}46\times$ przyspieszenie generacji dla \texttt{gemma3-4b} i~$1{,}67\times$
+dla \texttt{gemma4-e2b} względem pełnej precyzji Q8\_0, przy jednoczesnym
+zmniejszeniu pliku GGUF o~ok.~40\% i~bez degradacji jakości semantycznej
+(tabela~\ref{tab:kwantyzacja_wyniki}). Q4\_K\_M jest zatem optymalnym
+kompromisem między rozmiarem, szybkością a~jakością dla modeli rodziny Gemma.
+
+Po czwarte, i~jest to wynik kluczowy dla użyteczności prototypu, udało się
+radykalnie zredukować czas do pierwszego tokenu (TTFT). Na Raspberry~Pi~5
+pracującym wyłącznie na procesorze (CPU-only) prefill długiego promptu
+systemowego dominuje całkowite opóźnienie --- przy zimnym cache TTFT stanowi
+ok.~87\% E2E. Utrzymanie modelu oraz pamięci podręcznej kluczy i~wartości
+(KV-cache) w~,,ciepłej'' pamięci RAM (\texttt{keep\_alive=30m}) w~połączeniu
+z~konstrukcją promptu ze stałym prefiksem (\emph{prefix caching}) skróciło
+medianę TTFT z~ok.~27\,387~ms do~ok.~2378~ms, co odpowiada redukcji rzędu
+91\% (ostrożnie szacowanej na ok.~84\% w~warunkach produkcyjnych). Ponieważ
+urządzenie brzegowe nie dysponuje akceleratorem GPU, to właśnie zachowanie
+gorącego stanu w~RAM eliminuje najkosztowniejszy etap i~czyni interaktywnego
+asystenta głosowego na CPU-only realnym.
+
+Po piąte, połączenie powyższych dźwigni prowadzi do konkretnej, rekomendowanej
+konfiguracji produkcyjnej: \texttt{gemma3:4b} z~kwantyzacją Q4\_K\_M
+i~\emph{prefix cachingiem}. Osiąga ona E2E na poziomie ok.~8{,}3~s przy
+wskaźniku halucynacji 1{,}17\% --- czternastokrotnie niższym niż druga
+najlepsza opcja (16{,}5\%), przy czym różnice są istotne statystycznie
+(rozłączne przedziały ufności~95\%, tabela~\ref{tab:wyniki_finalne}).
+
+\subsection{Ocena prototypu względem założeń}
+
+Tezę pracy sformułowano w~dwóch wymiarach (sekcja~\ref{sec:modele} oraz wstęp),
+które posłużą tutaj jako punkt odniesienia dla oceny prototypu.
+
+Pierwszy wymiar --- zwiększenie dostępności informacji o~stanie domku
+wypoczynkowego dla użytkownika nietechnicznego poprzez lokalny interfejs
+głosowy --- został zrealizowany. Zbudowany prototyp o~architekturze
+Teacher--Student działa w~kompletnym łańcuchu przetwarzania: od detekcji
+aktywności głosowej (VAD) i~transkrypcji mowy (STT), przez dynamiczne budowanie
+kontekstu z~danych sensorycznych IoT przez model Nauczyciela, generację
+odpowiedzi przez SLM Ucznia na Raspberry~Pi, aż po syntezę mowy (TTS).
+Rozdzielenie kosztownej analizy kontekstu (Nauczyciel) od wrażliwej na
+opóźnienia obsługi zapytań (Uczeń) sprawia, że czas odpowiedzi asystenta nie
+zależy od czasu generacji kontekstu. Poprawność całego łańcucha zweryfikowano
+dla scenariuszy odpowiadających kategoriom złotego zbioru testowego, w~tym
+przypadków z~brakującymi i~nieaktualnymi danymi.
+
+Drugi wymiar --- wykonalność rozwiązania na platformie sprzętowej o~ograniczonych
+zasobach --- oceniono względem trzech założeń przyjętych we wstępie:
+\begin{itemize}
+  \item \textbf{Krótki czas odpowiedzi:} założenie spełnione. Dzięki kwantyzacji
+        Q4\_K\_M oraz utrzymaniu gorącego stanu modelu w~RAM (\emph{prefix
+        caching}) osiągnięto E2E na poziomie ok.~8{,}3~s (TTFT ok.~2{,}4~s,
+        generacja ok.~5{,}9~s) --- wartość akceptowalną dla asystenta głosowego,
+        zwłaszcza w~połączeniu ze strumieniowaniem odpowiedzi i~równoległą
+        syntezą mowy.
+  \item \textbf{Ograniczenie halucynacji:} założenie spełnione częściowo.
+        Rekomendowana konfiguracja \texttt{gemma3:4b} osiąga zaledwie 1{,}17\%
+        halucynacji ogółem, jednak w~najtrudniejszych kategoriach
+        \texttt{missing\_data} (39{,}4\%) i~\texttt{stale\_data} (29{,}4\%)
+        problem pozostaje otwarty i~wymaga interwencji na poziomie wag modelu.
+  \item \textbf{Poprawność językowa i~merytoryczna:} założenie spełnione.
+        Metryka \emph{polish\_quality} była rejestrowana przez cały cykl badań,
+        a~model \texttt{gemma3:4b} zapewnia komunikatywną jakość języka polskiego;
+        wysoka \emph{faithfulness} potwierdza zgodność odpowiedzi z~dostarczonym
+        kontekstem.
+\end{itemize}
+
+Dla rzetelności należy wskazać ograniczenia prototypu i~samych badań.
+Porównanie redukcji TTFT oparto na dwóch różnych protokołach (zmienny prompt
+przy zimnym cache vs stały prompt przy ciepłym cache), dlatego traktowane jest
+jako obserwacja porównawcza z~zastrzeżeniem metodologicznym, a~nie jako
+bezpośredni eksperyment cold~vs~warm. Ponadto halucynacje w~kategoriach
+\texttt{missing\_data} i~\texttt{stale\_data} nie zostały wyeliminowane przez
+żaden z~badanych mechanizmów (strojenie hiperparametrów, kwantyzację, \emph{prefix
+caching}), co wyznacza naturalny kierunek dalszych prac.
+
+\subsection{Perspektywy dalszego rozwoju}
+
+Wyniki przeprowadzonych badań wyznaczają kilka naturalnych kierunków dalszego
+rozwoju.
+
+Najważniejszym z~nich jest \textbf{fine-tuning modelu docelowego}. Ponieważ
+halucynacje w~kategoriach \texttt{missing\_data} i~\texttt{stale\_data} są
+własnością wag modelu, a~nie konfiguracji inferencji, jedyną skuteczną metodą
+ich redukcji jest modyfikacja wag. Zaplanowany eksperyment (sekcja~\ref{subsec:finetuning_plan})
+zakłada dostrojenie metodą LoRA za pomocą biblioteki \texttt{mlx-lm} na~MacBooku~M4,
+na zbiorze ok.~400~przykładów w~formacie \texttt{messages}, pokrywających
+wszystkie kategorie zachowań docelowych. Pozwoli to zweryfikować hipotezę, czy
+model dostrojony --- bez jawnych reguł w~prompcie systemowym --- przewyższa
+model bazowy z~regułami na najtrudniejszych scenariuszach.
+
+Drugim kierunkiem jest \textbf{domknięcie zastrzeżenia metodologicznego}
+dotyczącego redukcji TTFT: przeprowadzenie bezpośredniego eksperymentu cold~vs~warm
+dla identycznego promptu produkcyjnego, który pozwoliłby precyzyjnie skwantyfikować
+zysk z~\emph{prefix cachingu} bez porównywania różnych protokołów pomiarowych.
+
+Trzecim jest \textbf{wdrożenie produkcyjne} w~docelowym środowisku Ośrodka
+Wypoczynkowego Politechniki Warszawskiej w~Wildze (projekt Wilga~MiLL). Wymaga
+ono zastąpienia symulacji odczytów z~pliku CSV strumieniem danych na żywo
+(\emph{live feed}) z~fizycznych czujników oraz integracji z~istniejącą
+infrastrukturą IoT.
+
+Dalsze kierunki obejmują rozszerzenie puli badanych modeli i~wariantów
+kwantyzacji, ewaluację prototypu z~udziałem docelowych użytkowników
+nietechnicznych (badania użyteczności) oraz dalszą optymalizację warstw STT/TTS
+i~VAD pod kątem opóźnienia i~naturalności interakcji głosowej.

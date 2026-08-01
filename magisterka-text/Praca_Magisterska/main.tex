@@ -1,0 +1,135 @@
+%%------------------------------------------------%%
+%%  Engineer's & Master's Thesis Template         %%
+%%  Copyleft by Artur M. Brodzki & Piotr Woźniak  %%
+%%  Warsaw University of Technology, 2019-2021    %%
+%%------------------------------------------------%%
+
+\documentclass[
+    a4paper,
+    left=25mm,         % Sadly, generic margin parameter
+    right=25mm,        % doesnt't work, as it is
+    top=25mm,          % superseded by more specific
+    bottom=25mm,         % left...bottom parameters.
+    bindingoffset=5mm,  % Optional binding offset.
+    nohyphenation=false % You may turn off hyphenation, if don't like. 
+]{src/wut-thesis}
+
+\langpol % Dla języka angielskiego mamy \langeng
+\graphicspath{{tex/img/}}         % Katalog z obrazkami.
+\addbibresource{bibliografia.bib} % Plik .bib z bibliografią
+
+\begin{document}
+
+%--------------------------------------
+% Strona tytułowa
+%--------------------------------------
+\MasterThesis % Dla pracy inżynierskiej mamy \EngineerThesis
+\instytut{Telekomunikacji}
+\kierunek{Inżynieria Internetu Rzeczy}
+\title{
+Projekt i implementacja asystenta głosowego wykorzystującego lokalnie działające modele LLM na platformie sprzętowej o ograniczonych zasobach.
+}
+\engtitle{ % Tytuł po angielsku do angielskiego streszczenia
+   Design and implementation of a voice assistant using locally running LLM models on a resource-constrained hardware platform.
+}
+\author{Krzysztof Kulma}
+\album{318476}
+\promotor{dr inż. Daniel Paczesny}
+\date{\the\year}
+\maketitle
+
+%--------------------------------------
+% Streszczenie po polsku
+%--------------------------------------
+\cleardoublepage % Zaczynamy od nieparzystej strony
+\streszczenie Celem pracy było zwiększenie interaktywności wczasowiczów przebywających w domkach wypoczynkowych w Wildze poprzez wdrożenie lokalnego asystenta głosowego, umożliwiającego osobom nietechnicznym dostęp do informacji zbieranych przez czujniki IoT. Praca obejmuje zarówno część implementacyjną — zaprojektowanie i uruchomienie systemu opartego na architekturze dwumodelowej- jak i badawczą, polegającą na empirycznym doborze optymalnego modelu językowego oraz parametrów generacji dla środowiska o ograniczonych zasobach obliczeniowych. Pracę zakończono analizą wyników i sformułowaniem wniosków dotyczących działania modeli językowych na platformach klasy Raspberry Pi.
+\slowakluczowe asystent głosowy, large language model, smart home, inferencja lokalna, sprzęt o ograniczonych zasobach
+%--------------------------------------
+% Streszczenie po angielsku
+%--------------------------------------
+\cleardoublepage
+\abstract  The aim of this project was to increase interactivity for holidaymakers staying in Wilga's holiday cottages by implementing a local voice assistant. This allows non-technical users to access information collected by IoT sensors. The project comprised an implementation component involving the design and deployment of a system based on a dual-model architecture, as well as a research component involving the empirical selection of optimal language models and generation parameters for environments with limited computational resources. The thesis concludes with an analysis of the results and conclusions regarding the performance of language models on Raspberry Pi-class platforms.
+\keywords  voice assistant, large language model, smart home, on-device inference, resource-constrained devices
+
+%--------------------------------------
+% Oświadczenie o autorstwie
+%--------------------------------------
+%\cleardoublepage  % Zaczynamy od nieparzystej strony
+%\pagestyle{plain}
+%\makeauthorship
+
+%--------------------------------------
+% Spis treści
+%--------------------------------------
+\cleardoublepage % Zaczynamy od nieparzystej strony
+\tableofcontents
+
+%--------------------------------------
+% Rozdziały
+%--------------------------------------
+\cleardoublepage % Zaczynamy od nieparzystej strony
+\pagestyle{headings}
+
+\input{tex/1-wstep}
+\input{tex/2-przeglad-literatury}
+\input{tex/3-koncepcja}
+\input{tex/4-srodowisko}
+\input{tex/5-badania}
+\input{tex/6-realizacja}
+\input{tex/7-podsumowanie}
+%--------------------------------------------
+% Literatura
+%--------------------------------------------
+\cleardoublepage % Zaczynamy od nieparzystej strony
+\printbibliography
+
+%--------------------------------------------
+% Spisy (opcjonalne)
+%--------------------------------------------
+\newpage
+\pagestyle{plain}
+
+% Wykaz symboli i skrótów.
+% Pamiętaj, żeby posortować symbole alfabetycznie
+% we własnym zakresie. Ponieważ mało kto używa takiego wykazu,
+% uznałem, że robienie automatycznie sortowanej listy
+% na poziomie LaTeXa to za duży overkill.
+% Makro \acronymlist generuje właściwy tytuł sekcji,
+% w zależności od języka.
+% Makro \acronym dodaje skrót/symbol do listy,
+% zapewniając podstawowe formatowanie.
+% //AB
+\vspace{0.8cm}
+\acronymlist
+\acronym{EiTI}{Wydział Elektroniki i Technik Informacyjnych}
+\acronym{PW}{Politechnika Warszawska}
+\acronym{RPi}{Raspberry Pi}
+\acronym{HA}{Home Assistance}
+\acronym{Z2M}{Zigbee To Mqtt}
+\acronym{SI}{Sztuczna Inteligencja}
+\acronym{AP}{Access Point}
+
+
+\listoffigurestoc     % Spis rysunków.
+\vspace{1cm}          % vertical space
+\listoftablestoc      % Spis tabel.
+\vspace{1cm}          % vertical space
+\listofappendicestoc  % Spis załączników
+
+% Tabele i wykresy w załączniku nie są brane pod uwagę w spisie tabel i wykresów.
+% Ich numeracja jest zresetowana.
+\captionsetup[figure]{list=no}
+\captionsetup[table]{list=no}
+
+% Załączniki
+% \input{tex/appendix/obudowa}
+\end{document}
+
+\newpage
+\appendix{Nazwa załącznika 2}
+
+% Używając powyższych spisów jako szablonu,
+% możesz tu dodać swój własny wykaz bądź listę,
+% np. spis algorytmów.
+
+\end{document} % Dobranoc.

@@ -1,0 +1,86 @@
+{
+  "latex-workshop.latex.autoBuild.run": "onSave",
+  "latex-workshop.latex.outDir": "%DIR%/build/pdflatex",
+  "latex-workshop.latex.watch.usePolling": true,
+  "latex-workshop.linting.chktex.enabled": false,
+  "latex-workshop.linting.lacheck.enabled": false,
+  "vsWhisper.backend": "local",
+  "vsWhisper.language": "pl",
+  "vsWhisper.localWhisperModel": "small",
+  "latex-workshop.view.pdf.viewer": "tab",
+  "latex-workshop.synctex.afterBuild.enabled": true,
+  "latex-workshop.latex.recipe.default": "lastUsed",
+  "latex-workshop.latex.recipes": [
+    {
+      "name": "latexmk (pdfLaTeX)",
+      "tools": [
+        "latexmk-pdf"
+      ]
+    },
+    {
+      "name": "latexmk (LuaLaTeX)",
+      "tools": [
+        "latexmk-lua"
+      ]
+    },
+    {
+      "name": "latexmk (XeLaTeX)",
+      "tools": [
+        "latexmk-xe"
+      ]
+    }
+  ],
+  "latex-workshop.latex.tools": [
+    {
+      "name": "latexmk-pdf",
+      "command": "/Library/TeX/texbin/latexmk",
+      "env": {
+        "PATH": "/Library/TeX/texbin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+      },
+      "args": [
+        "-synctex=1",
+        "-interaction=nonstopmode",
+        "-file-line-error",
+        "-pdf",
+        "-bibtex",
+        "-f",
+        "-outdir=%DIR%/build/pdflatex",
+        "%DOC%"
+      ]
+    },
+    {
+      "name": "latexmk-lua",
+      "command": "/Library/TeX/texbin/latexmk",
+      "env": {
+        "PATH": "/Library/TeX/texbin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+      },
+      "args": [
+        "-synctex=1",
+        "-interaction=nonstopmode",
+        "-file-line-error",
+        "-lualatex",
+        "-bibtex",
+        "-f",
+        "-outdir=%DIR%/build/lualatex",
+        "%DOC%"
+      ]
+    },
+    {
+      "name": "latexmk-xe",
+      "command": "/Library/TeX/texbin/latexmk",
+      "env": {
+        "PATH": "/Library/TeX/texbin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+      },
+      "args": [
+        "-synctex=1",
+        "-interaction=nonstopmode",
+        "-file-line-error",
+        "-xelatex",
+        "-bibtex",
+        "-f",
+        "-outdir=%DIR%/build/xelatex",
+        "%DOC%"
+      ]
+    }
+  ]
+}

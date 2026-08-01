@@ -1,0 +1,11 @@
+# LaTeX build artifacts
+Praca_Magisterska/build/
+
+# OS / editor junk
+.DS_Store
+**/.DS_Store
+.cursor/
+Praca_Magisterska/.cursor/
+
+# Redundant zip of the same sources
+Praca_Magisterska.zip

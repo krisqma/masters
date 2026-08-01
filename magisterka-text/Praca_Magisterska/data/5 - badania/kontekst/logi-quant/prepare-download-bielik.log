@@ -1,0 +1,24 @@
+[prepare] huggingface-cli found in Python user base: /Users/krzysztof/Library/Python/3.9/bin/huggingface-cli
+[prepare] HF_TOKEN not set; continuing without explicit login.
+[prepare] === bielik-4.5b ===
+[prepare] downloading speakleash/Bielik-4.5B-v3.0-Instruct-GGUF / Bielik-4.5B-v3.0-Instruct-fp16.gguf -> ./models/bielik-4.5b
+/Users/krzysztof/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/krzysztof/Library/Python/3.9/lib/python/site-packages/huggingface_hub/commands/download.py:141: FutureWarning: Ignoring --local-dir-use-symlinks. Downloading to a local directory does not use symlinks anymore.
+  warnings.warn(
+Downloading 'Bielik-4.5B-v3.0-Instruct-fp16.gguf' to 'models/bielik-4.5b/.cache/huggingface/download/TBFeqFPRKq92oWDvHtw3BBYTby4=.1f62e00fda7a8a6ff718b3ef29995797c67df8ff4d5f34863b9b890890487cba.incomplete'
+Download complete. Moving file to models/bielik-4.5b/Bielik-4.5B-v3.0-Instruct-fp16.gguf
+[33m⚠️  Warning: 'huggingface-cli download' is deprecated. Use 'hf download' instead.[0m
+models/bielik-4.5b/Bielik-4.5B-v3.0-Instruct-fp16.gguf
+[prepare] downloaded: ./models/bielik-4.5b/Bielik-4.5B-v3.0-Instruct-fp16.gguf (8.9G)
+[prepare] generated/source GGUF files:
+MODEL                  SIZE               FILE
+bielik-4.5b            8.9G               ./models/bielik-4.5b/Bielik-4.5B-v3.0-Instruct-fp16.gguf
+gemma3-4b              1.6G               ./models/gemma3-4b/gemma3-4b-Q2_K.gguf
+gemma3-4b              2.2G               ./models/gemma3-4b/gemma3-4b-Q4_0.gguf
+gemma3-4b              2.3G               ./models/gemma3-4b/gemma3-4b-Q4_K_M.gguf
+gemma3-4b              3.9G               ./models/gemma3-4b/gemma3-4b-Q8_0.gguf
+gemma3-4b              7.2G               ./models/gemma3-4b/google_gemma-3-4b-it-bf16.gguf
+gemma4-e2b             41M                ./models/gemma4-e2b/gemma4-e2b-Q4_K_M.gguf
+gemma4-e2b             41M                ./models/gemma4-e2b/gemma4-e2b-Q8_0.gguf
+gemma4-e2b             8.7G               ./models/gemma4-e2b/google_gemma-4-E2B-it-bf16.gguf

@@ -1,0 +1,88 @@
+\newpage
+\section{Realizacja prototypu}
+
+\subsection{Symulacja środowiska sensorycznego i generowanie kontekstu}
+
+Podstawą działania systemu Wilga jest zbiór danych pomiarowych pochodzących z sieci czujników internetu rzeczy (ang. \textit{Internet of Things}, IoT) obiektu rekreacyjnego, zarejestrowany w okresie od 31.10.2025 do 27.01.2026 i przechowywany w pliku CSV (\texttt{db\_sampler/sensor\_data\_2025-10-31\_2026-01-27.csv}). Plik ten zawiera około 146 kolumn, obejmujących odczyty temperatury, wilgotności względnej, stężenia CO$_2$, natężenia oświetlenia, chwilowego poboru mocy elektrycznej, skumulowanego zużycia energii, obecności osób oraz stanu kontaktronów drzwi i okien. Zakres tematyczny zbioru odzwierciedla zatem zarówno warunki mikroklimatyczne panujące w poszczególnych pomieszczeniach, jak i parametry eksploatacyjne całego obiektu, dzięki czemu możliwe stało się odwzorowanie realistycznego środowiska pracy asystenta. Do budowy kontekstu wykorzystano podzbiór około 35 zmiennych związanych z komfortem oraz stanem technicznym pomieszczeń. Kolumny zduplikowane lub wysoce skorelowane pominięto, aby ograniczyć rozmiar przekazywanego kontekstu i zmniejszyć ryzyko halucynacji małego modelu językowego SLM Uczeń. Świadome zawężenie liczby zmiennych podyktowane było również ograniczoną pojemnością okna kontekstu modelu działającego na urządzeniu brzegowym, dla którego nadmiarowe dane wejściowe stanowiłyby obciążenie bez wartości informacyjnej.
+
+Wobec braku strumienia danych na żywo (ang. \textit{live feed}) z czujników na etapie prototypu, Context Service realizuje symulację upływu czasu poprzez sekwencyjne przetwarzanie kolejnych wierszy pliku CSV. Każde wywołanie cyklu odświeżania przesuwa wewnętrzny kursor o jeden wiersz, odpowiadający kolejnemu pomiarowi w historii obiektu; po osiągnięciu ostatniego wiersza symulacja powraca do początku pliku, co zapewnia ciągłość działania systemu. Kolejne wiersze traktowane są jako następujące po sobie chwile czasowe, co pozwoliło odtworzyć naturalną dynamikę zmian parametrów, w tym stopniowe narastanie i opadanie temperatury czy cykliczne zmiany obecności osób. Rozwiązanie takie umożliwiło przetestowanie logiki analizy oraz generowania kontekstu bez konieczności podłączania fizycznych czujników i odtwarzania rzeczywistych warunków pomiarowych, a jednocześnie zachowało wierność charakterystyce danych pochodzących z rzeczywistej instalacji.
+
+W każdym cyklu Context Service przekazuje bieżący zrzut stanu (ang. \textit{snapshot}) do modelu LLM Nauczyciela, działającego lokalnie na serwerze. Nauczyciel realizuje wielopunktową analizę, której nie sposób wyrazić prostymi regułami: wyznacza korelacje między pomieszczeniami, wykrywa anomalie na tle danych historycznych oraz ocenia trend parametrów komfortu. Zadania te wymagają uogólniania oraz wnioskowania na podstawie wielu współzależnych zmiennych, co czyni je naturalnym obszarem zastosowania dużego modelu językowego. Logika czysto deterministyczna, taka jak wykrycie przekroczenia zadanego progu temperatury czy odczyt wartości boolowskiej kontaktronu, pozostaje natomiast w warstwie języka Python i nie jest delegowana do modelu, co pozwala zarezerwować jego zasoby wyłącznie dla zadań wymagających wnioskowania oraz uniknąć niepewności wynikającej z probabilistycznej natury generacji tam, gdzie oczekiwany jest jednoznaczny wynik.
+
+Odpowiedź Nauczyciela jest walidowana za pomocą struktury Pydantic złożonej z czterech pól:
+
+\begin{itemize}
+    \item \texttt{EnergyInsight} --- analiza zużycia energii oraz anomalii poboru mocy;
+    \item \texttt{ComfortInsight} --- ocena komfortu obejmująca temperaturę, wilgotność oraz natężenie oświetlenia;
+    \item \texttt{PatternInsight} --- wzorce czasowe oraz korelacje między pomieszczeniami;
+    \item \texttt{soft\_summary} --- dwuzdaniowe podsumowanie stanu obiektu sformułowane w języku polskim.
+\end{itemize}
+
+Tak ustrukturyzowany wynik jest następnie formatowany przez Context Service do postaci \textit{system promptu} i udostępniany za pośrednictwem endpointu \texttt{GET /api/context}. Wymóg strukturyzowanego wyniku, w miejsce swobodnej narracji, wprowadzono celowo: zapewnia on przewidywalną formę kontekstu przekazywanego Uczniowi oraz redukuje zmienność stylów odpowiedzi generowanych przez Nauczyciela, co przekłada się na stabilność całego potoku przetwarzania. Rozdzielenie analizy na cztery odrębne pola ułatwiło ponadto niezależne testowanie oraz walidację poszczególnych aspektów oceny stanu obiektu, a także selektywne włączanie wybranych fragmentów do finalnego promptu w zależności od charakteru zadanego pytania.
+
+Ogólną organizację systemu oraz kierunki przepływu danych między poszczególnymi komponentami przedstawiono na rysunku~\ref{fig:architektura}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{src/img/system-schemat.png}
+    \caption{Diagram architektury systemu Wilga --- przepływ danych między komponentami.}
+    \label{fig:architektura}
+\end{figure}
+
+\subsection{Implementacja asynchronicznej komunikacji między komponentami}
+
+System zrealizowano jako złożenie dwóch niezależnych, asynchronicznych cykli działania. Pierwszy z nich, odpowiadający za odświeżanie kontekstu, realizuje Context Service z interwałem określonym parametrem \texttt{CONTEXT\_REFRESH\_INTERVAL}: w każdym przebiegu serwis odpytuje Nauczyciela, waliduje otrzymaną odpowiedź i aktualizuje wewnętrzną reprezentację system promptu, bez udziału użytkownika. Cykl ten działa w tle w sposób ciągły, niezależnie od tego, czy w danej chwili obsługiwane jest jakiekolwiek zapytanie. Drugi cykl, obsługujący zapytanie głosowe, uruchamiany jest zdarzeniem zewnętrznym w postaci transkrypcji mowy i synchronicznie pobiera aktualny kontekst z pamięci podręcznej (ang. \textit{cache}) Context Service. Dzięki takiemu rozdzieleniu czas odpowiedzi Ucznia nie zależy od czasu generacji Nauczyciela --- kosztowna obliczeniowo analiza sensoryczna jest zawsze przygotowana z wyprzedzeniem i gotowa do natychmiastowego użycia. Rozwiązanie to stanowi kluczowy element architektury Teacher--Student, ponieważ pozwala oddzielić powolne, lecz rzadko wykonywane wnioskowanie kontekstowe od częstej i wrażliwej na opóźnienia obsługi interakcji z użytkownikiem.
+
+Whisper Backend przed skierowaniem zapytania do Ucznia pobiera system prompt przez wywołanie \texttt{GET http://127.0.0.1:8001/api/context}. Przykładową odpowiedź endpointu przedstawiono poniżej:
+
+\begin{verbatim}
+{
+  "status": "ready",
+  "source_timestamp": "2025-11-01T12:00:00Z",
+  "insight": "Temperatura w salonie wynosi 21,4 st. C...",
+  "system_prompt": "Jestes asystentem glosowym..."
+}
+\end{verbatim}
+
+Gdy Context Service nie zakończył jeszcze pierwszego cyklu odświeżania, endpoint zwraca stan \texttt{"status": "pending"}. Whisper Backend obsługuje ten przypadek i nie kieruje zapytania do Ucznia do czasu uzyskania kompletnego, gotowego kontekstu, co zapobiega generowaniu odpowiedzi na podstawie niepełnych danych. Sytuacja taka występuje w praktyce jedynie w krótkim okresie bezpośrednio po uruchomieniu systemu; po zakończeniu pierwszego cyklu kontekst pozostaje stale dostępny, a jego kolejne aktualizacje odbywają się w sposób niewidoczny dla warstwy obsługującej zapytania.
+
+Zapytanie do Ucznia wysyłane jest jako żądanie HTTP POST do interfejsu Ollama API, działającego na urządzeniu Raspberry Pi pod adresem \texttt{http://192.168.1.173:11434/api/chat}. Żądanie zawiera system prompt pozyskany z Context Service oraz transkrypcję pytania przekazaną jako wiadomość użytkownika. Parametry generacji, takie jak temperatura, rozmiar okna kontekstu oraz maksymalna długość odpowiedzi, konfigurowane są indywidualnie dla każdego żądania (ang. \textit{per-request}) w polu \texttt{options}, bez konieczności restartu serwera Ollama. Odpowiedź Ucznia jest strumieniowana do frontendu w formacie NDJSON za pośrednictwem endpointu \texttt{POST /api/chat}:
+
+\begin{verbatim}
+{"type":"chunk","content":"W salonie"}
+{"type":"chunk","content":" jest teraz 21,4 stopni."}
+{"type":"done"}
+\end{verbatim}
+
+Strumieniowanie (ang. \textit{streaming}) umożliwia wyświetlanie kolejnych słów odpowiedzi na bieżąco, bez oczekiwania na zakończenie całej generacji, co ma istotne znaczenie przy opóźnieniu (ang. \textit{latency}) rzędu kilku sekund charakterystycznym dla inferencji wykonywanej wyłącznie na procesorze (ang. \textit{CPU-only}) urządzenia Raspberry Pi.
+
+Wszystkie operacje wykraczające poza samą inferencję modelu SLM Uczeń --- transkrypcja mowy na tekst, budowanie kontekstu, walidacja struktur Pydantic, synteza mowy oraz obsługa połączeń WebSocket --- wykonywane są na serwerze lokalnym, którym jest komputer Mac. Raspberry Pi udostępnia wyłącznie interfejs Ollama API i nie realizuje żadnych dodatkowych obliczeń w trakcie generacji odpowiedzi. Przyjęty podział odpowiedzialności jest spójny z założeniem, że urządzenie brzegowe pełni rolę wyspecjalizowanego węzła inferencyjnego, natomiast całość logiki orkiestracji pozostaje po stronie serwera. Takie rozłożenie obciążenia umożliwiło pomiar metryk wydajności --- opóźnienia, liczby tokenów na sekundę, zużycia pamięci RAM oraz temperatury procesora --- odzwierciedlających warunki produkcyjne, bez zniekształcenia wyników przez równolegle działające procesy. W efekcie zmierzone wartości można przypisać wyłącznie samej inferencji modelu, co zwiększa wiarygodność późniejszej analizy wydajnościowej.
+
+Wszystkie adresy sieciowe, nazwy modeli oraz interwały czasowe konfigurowane są przy użyciu plików \texttt{.env}, bez modyfikacji kodu źródłowego:
+
+\begin{itemize}
+    \item \texttt{context\_service/.env}: \texttt{TEACHER\_OLLAMA\_URL}, \texttt{TEACHER\_OLLAMA\_MODEL}, \texttt{CONTEXT\_REFRESH\_INTERVAL}, \texttt{SENSOR\_DATA\_PATH};
+    \item \texttt{whisper-proj/backend/.env}: \texttt{OLLAMA\_URL}, \texttt{OLLAMA\_MODEL}, \texttt{CONTEXT\_SERVICE\_URL}, \texttt{WHISPER\_MODEL\_SIZE}.
+\end{itemize}
+
+\subsection{Pipeline przetwarzania mowy}
+
+Pierwszym etapem przetwarzania sygnału głosowego jest detekcja aktywności mowy (ang. \textit{Voice Activity Detection}, VAD), zrealizowana z użyciem modelu Silero VAD \cite{SileroVAD}. VAD przetwarza ciągły strumień audio z mikrofonu w fragmentach o długości około 30~ms, klasyfikując każdy z nich jako mowę lub ciszę. Segmenty ciszy są odrzucane przed przekazaniem audio do modułu transkrypcji, co eliminuje fałszywe transkrypcje z szumów tła i skraca czas przetwarzania przez ograniczenie wejścia STT wyłącznie do fragmentów zawierających mowę. Frontend realizuje automatyczne zatrzymanie nagrywania po wykryciu ciszy o określonym czasie trwania, zapewniając naturalne zakończenie wypowiedzi bez interwencji użytkownika.
+
+System obsługuje dwa tryby aktywacji. W trybie głosowym użytkownik wypowiada frazę \textit{,,Hej Wilga''}, wykrywaną przez Web Speech API w przeglądarce; po jej rozpoznaniu interfejs automatycznie rozpoczyna nagrywanie. W trybie manualnym użytkownik aktywuje nagrywanie przyciskiem w interfejsie React. Oba tryby kierują nagrany sygnał audio do tego samego dalszego przetwarzania realizowanego przez Whisper Backend.
+
+Nagrany segment audio przesyłany jest do Whisper Backendu przez \texttt{POST /api/transcribe}. Transkrypcja (ang. \textit{Speech-to-Text}, STT) realizowana jest lokalnie biblioteką \texttt{faster-whisper} \cite{Radford2023} --- zoptymalizowaną implementacją modelu Whisper opartą na silniku CTranslate2, o niższym zużyciu pamięci i wyższym przepływie (ang. \textit{throughput}) niż referencyjna implementacja w PyTorch. Rozmiar modelu konfigurowany jest zmienną \texttt{WHISPER\_MODEL\_SIZE}; dla środowiska serwerowego zastosowano wariant \textit{medium}, zapewniający wysoką dokładność transkrypcji języka polskiego przy akceptowalnym czasie przetwarzania.
+
+Uzyskany tekst transkrypcji przekazywany jest do \texttt{POST /api/chat}, który pobiera aktualny system prompt z Context Service, konstruuje kompletne zapytanie do SLM Ucznia i otwiera strumieniowe połączenie z Ollama API na Raspberry Pi. Wygenerowana odpowiedź tekstowa Ucznia przekazywana jest do modułu syntezy mowy (ang. \textit{Text-to-Speech}, TTS), który produkuje plik audio odtwarzany przez głośnik użytkownika. Zastosowany silnik TTS oparto na architekturze VITS \cite{Kim2021} --- warunkowym autoenkoderze wariacyjnym z treningiem antagonistycznym (ang. \textit{adversarial}) --- zapewniającej naturalnie brzmiącą syntezę mowy przy niskim opóźnieniu (ang. \textit{latency}), co jest warunkiem koniecznym płynnej interakcji głosowej.
+
+Interfejs frontendowy, zrealizowany w technologii React z bundlerem Vite, wyświetla historię rozmowy w czasie rzeczywistym, wizualizując kolejne fragmenty odpowiedzi Ucznia natychmiast po ich wygenerowaniu dzięki strumieniowaniu NDJSON. Maskotka Wilguś --- postać zainspirowana ptakiem wilgą naturalnie występującym na terenie obiektu --- pełni rolę wizualnego wskaźnika stanu systemu: oczekiwania, aktywnego nasłuchiwania oraz generacji odpowiedzi.
+
+\subsection{Weryfikacja łańcucha komunikacyjnego}
+
+Weryfikację poprawności kompletnego łańcucha komunikacyjnego przeprowadzono przez manualne testy integracyjne po uruchomieniu pełnego stosu skryptem \texttt{start.sh}. Skrypt kolejno uruchamia lokalną instancję Ollamy z modelem LLM Nauczyciela, Context Service, Whisper Backend oraz serwer deweloperski frontendu, weryfikując dostępność każdego komponentu przed przejściem do uruchomienia kolejnego.
+
+Poprawność każdego komponentu weryfikowano przez bezpośrednie odpytanie endpointów. Dla Context Service sprawdzano gotowość przez \texttt{GET /api/health} oraz poprawność struktury i zawartości system promptu przez \texttt{GET /api/context}. Dla Whisper Backendu weryfikowano transkrypcję przez \texttt{POST /api/transcribe} z nagraniem testowym, a następnie kompletny łańcuch przez \texttt{POST /api/chat} z pytaniem tekstowym --- sprawdzając poprawność strumieniowania NDJSON oraz zawartości odpowiedzi SLM Ucznia. Weryfikowano też poprawność przekazania kontekstu: odpowiedź Ucznia na pytanie o aktualną temperaturę powinna być spójna z wartością z ostatniego snapshotu CSV przekazanego przez Context Service.
+
+Testy przeprowadzono dla reprezentatywnych scenariuszy odpowiadających typom ze zbioru złotego standardu benchmarku: pytanie o aktualny stan (temperatura, oświetlenie), pytanie przy brakujących danych (sprawdzenie, czy Uczeń odmawia odpowiedzi zamiast halucynować) oraz pytanie przy nieaktualnym znaczniku czasu. W każdym scenariuszu weryfikowano poprawność merytoryczną odpowiedzi oraz kompletność przepływu danych --- od transkrypcji wejściowej, przez kontekst przekazany przez LLM Nauczyciela, aż po syntezę mowy na wyjściu.
+
+Wszystkie komponenty funkcjonowały zgodnie z założoną specyfikacją; łańcuch od transkrypcji audio do odpowiedzi tekstowej SLM Ucznia działał poprawnie dla wszystkich testowanych scenariuszy. Zidentyfikowane konfiguracyjne zależności między komponentami --- kolejność uruchamiania, dostępność modeli Ollama oraz ścieżki do pliku CSV --- udokumentowano w pliku \texttt{README.md} repozytorium i obsłużono mechanizmem walidacji w skrypcie \texttt{start.sh}.

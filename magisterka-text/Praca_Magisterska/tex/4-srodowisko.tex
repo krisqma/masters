@@ -1,0 +1,70 @@
+\newpage
+\section{Środowisko projektowo-badawcze}
+
+\subsection{Uzasadnienie wyboru platformy brzegowej}
+
+Jako referencyjną platformę brzegową dla modelu ucznia wybrano mikrokomputer Raspberry Pi 5 w wersji wyposażonej w 8 GB pamięci RAM. Wybór ten wynikał z kilku powiązanych przesłanek projektowych. Po pierwsze, urządzenia tej klasy są powszechnie wykorzystywane w rozwiązaniach Internetu Rzeczy, ponieważ łączą niewielkie rozmiary, umiarkowany pobór energii oraz możliwość pracy jako niezależne węzły systemu. Po drugie, komputery Raspberry Pi były już stosowane w środowisku systemu Wilga MiLL jako elementy odpowiedzialne za agregację danych oraz obsługę wybranych funkcji lokalnych. Z tego względu wykorzystanie tej samej klasy sprzętu pozwala zachować spójność z istniejącą infrastrukturą.
+
+Istotnym kryterium wyboru była również ograniczona moc obliczeniowa tej platformy. Raspberry Pi 5 nie jest wyposażone w dedykowaną kartę graficzną przeznaczoną do przyspieszania obliczeń związanych z inferencją modeli językowych. W konsekwencji uruchamianie modelu LLM lub SLM na takim urządzeniu wymaga dobrania odpowiednio małego modelu, zastosowania kwantyzacji oraz ograniczenia długości kontekstu przekazywanego do promptu. Ograniczenia te uznano za zgodne z celem pracy, ponieważ pozwalają zbadać praktyczne możliwości działania lokalnego asystenta głosowego na sprzęcie o zasobach zbliżonych do urządzeń wykorzystywanych w systemach IoT.
+
+Zastosowanie Raspberry Pi 5 jako platformy odniesienia pozwala również odtworzyć warunki, w których rozwiązanie mogłoby zostać wdrożone w domku wypoczynkowym. Urządzenie może pracować lokalnie, w pobliżu źródeł danych i interfejsu użytkownika, bez konieczności przekazywania każdego zapytania do zewnętrznej usługi chmurowej. Takie podejście wpisuje się w założenia architektury brzegowej, w której część przetwarzania wykonywana jest możliwie blisko miejsca powstawania danych.
+
+\subsection{Architektura sprzętowa}
+
+W projekcie rozważono dwa typy jednostek obliczeniowych. Pierwszą z nich jest urządzenie brzegowe, czyli Raspberry Pi 5, na którym uruchamiany jest model ucznia. Jego zadaniem jest obsługa właściwego zapytania użytkownika połączonego z przygotowanym wcześniej kontekstem. Drugi typ jednostki stanowi platforma serwerowa, przeznaczona do okresowego uruchamiania większego modelu językowego pełniącego rolę nauczyciela. Taki podział odpowiedzialności wynika z architektury opisanej w rozdziale dotyczącym koncepcji systemu i pozwala rozdzielić zadania wymagające szybkiej lokalnej odpowiedzi od zadań wymagających większej mocy obliczeniowej.
+
+Jako jedną z możliwych platform dla modelu nauczyciela rozważono stację roboczą znajdującą się w laboratorium LaVa na Wydziale Elektroniki i Technik Informacyjnych Politechniki Warszawskiej. Komputer ten wyposażony jest w kartę graficzną NVIDIA GeForce RTX 3050, co czyni go odpowiednim kandydatem do uruchamiania większych modeli językowych niż te możliwe do zastosowania na Raspberry Pi. Wykorzystanie takiej jednostki pozwoliłoby przenieść bardziej kosztowne obliczeniowo zadania, takie jak analiza większych zbiorów danych historycznych, poza urządzenie brzegowe.
+
+Alternatywną platformą dla modelu nauczyciela jest komputer MacBook z układem Apple M4 i 16 GB pamięci zunifikowanej. Zaletą tej klasy sprzętu jest architektura Apple Silicon, w której pamięć współdzielona może być wykorzystywana przez różne jednostki obliczeniowe układu. W praktyce ułatwia to uruchamianie lokalnych modeli językowych, szczególnie w porównaniu z klasycznymi konfiguracjami, w których ograniczeniem bywa oddzielna pojemność pamięci karty graficznej. Z tego względu zdecydowano się rozpocząć prace implementacyjne i testy integracyjne od tej platformy, ponieważ była łatwiej dostępna w trakcie realizacji projektu.
+
+Przyjęcie MacBooka jako początkowej platformy dla modelu nauczyciela nie wyklucza wykorzystania stacji roboczej z kartą NVIDIA GeForce RTX 3050 w kolejnych etapach. Zmiana platformy może okazać się zasadna w przypadku testów wymagających porównania czasu generacji, obsługi większego modelu lub stabilniejszego środowiska pracy długotrwałych procesów serwerowych. W ten sposób architektura pozostaje elastyczna, a wybór konkretnej jednostki dla modelu nauczyciela może zostać dostosowany do potrzeb badań.
+
+W przyjętej topologii Raspberry Pi pełni rolę lokalnego węzła uruchomieniowego dla modelu ucznia. Aplikacja użytkownika komunikuje się z warstwą serwerową, która odpowiada za obsługę nagrania, transkrypcję mowy, syntezę odpowiedzi oraz przygotowanie kontekstu. Dane kontekstowe są cyklicznie generowane przez komponent serwerowy i wykorzystywane przy obsłudze zapytań kierowanych do modelu lokalnego. Takie rozdzielenie elementów sprzętowych pozwala ograniczyć obciążenie urządzenia brzegowego, a jednocześnie zachować lokalny charakter inferencji wykonywanej przez model ucznia.
+
+\subsection{Uruchamianie modeli LLM na edge: wyzwania i ograniczenia}
+
+Uruchamianie modeli językowych na urządzeniach brzegowych stanowi istotne wyzwanie techniczne, przede wszystkim ze względu na ograniczoną ilość pamięci operacyjnej oraz brak dedykowanego układu GPU. W przypadku przyjętej platformy referencyjnej dostępne jest 8 GB pamięci RAM, która musi wystarczyć zarówno na system operacyjny, środowisko uruchomieniowe, jak i sam model wraz z kontekstem wejściowym. Oznacza to, że pełnowymiarowe modele LLM, których liczba parametrów może sięgać dziesiątek lub setek miliardów, nie są możliwe do praktycznego wykorzystania w analizowanym środowisku.
+
+Z tego względu w pracy skoncentrowano się na małych modelach językowych klasy SLM. Modele te mają zwykle kilka miliardów parametrów i mogą być uruchamiane lokalnie po zastosowaniu odpowiedniego formatu zapisu oraz kwantyzacji. Zmniejszenie precyzji wag pozwala ograniczyć rozmiar modelu i zapotrzebowanie na pamięć, jednak może również wpływać na jakość generowanych odpowiedzi. Dobór modelu nie może więc opierać się wyłącznie na jego rozmiarze, lecz powinien uwzględniać kompromis pomiędzy jakością odpowiedzi, czasem generacji oraz stabilnością działania na platformie brzegowej.
+
+Szczególne znaczenie ma opóźnienie odpowiedzi. W przypadku asystenta głosowego użytkownik oczekuje reakcji w czasie zbliżonym do naturalnej rozmowy, dlatego zbyt długie oczekiwanie na pierwszy token lub zakończenie wypowiedzi może obniżyć użyteczność całego rozwiązania. Jednocześnie zwiększanie rozmiaru modelu lub długości kontekstu zwykle prowadzi do wzrostu zużycia pamięci oraz wydłużenia czasu inferencji. W związku z tym w dalszej części pracy analizie poddano nie tylko wybór konkretnego modelu, lecz także parametry generacji i sposób przygotowania promptu.
+
+Ograniczenia środowiska edge wpłynęły również na decyzję o zastosowaniu architektury Nauczyciel-Uczeń. Model lokalny nie powinien samodzielnie analizować pełnych zbiorów danych historycznych, ponieważ wymagałoby to przekazania długiego kontekstu i zwiększyłoby czas odpowiedzi. Zamiast tego założono, że bardziej zasobożerny model nauczyciela przygotowuje syntetyczne podsumowania, które następnie są wykorzystywane przez model ucznia. Takie podejście pozwala zmniejszyć ilość danych przetwarzanych bezpośrednio na Raspberry Pi, a jednocześnie zachować możliwość udzielania odpowiedzi powiązanych z rzeczywistym stanem systemu IoT.
+
+\subsection{Wykorzystane oprogramowanie i technologie}
+
+\subsubsection{Aplikacja użytkownika}
+
+Aplikacja użytkownika nie była tworzona w ramach pracy od podstaw. Zdecydowano się rozszerzyć istniejącą aplikację systemu Wilga MiLL o funkcje związane z asystentem głosowym, ponieważ pozwala to wykorzystać już przygotowany interfejs oraz mechanizmy komunikacji z systemem. W konsekwencji podstawowy stos technologiczny części frontendowej został narzucony przez istniejące rozwiązanie.
+
+Aplikacja została przygotowana z wykorzystaniem biblioteki React, języka TypeScript oraz narzędzia Vite. Komunikacja z warstwą serwerową odbywa się z użyciem protokołu HTTP oraz połączeń WebSocket. Taki zestaw technologii umożliwia zarówno obsługę klasycznych żądań, jak i przekazywanie informacji aktualizowanych w czasie rzeczywistym. W kontekście projektowanego asystenta szczególne znaczenie ma możliwość sprawnego przekazywania nagrań, odbierania wyników przetwarzania oraz prezentowania odpowiedzi użytkownikowi w aplikacji.
+
+\subsubsection{Warstwa serwerowa i komunikacyjna}
+
+Warstwa serwerowa pełni funkcję pośrednią pomiędzy aplikacją użytkownika, modułami przetwarzania mowy, modelem nauczyciela oraz modelem ucznia. Do jej implementacji przyjęto język Python, ponieważ jest on szeroko wykorzystywany w rozwiązaniach związanych z uczeniem maszynowym i umożliwia wygodną integrację z bibliotekami obsługującymi modele językowe oraz przetwarzanie dźwięku. Jako technologię budowy interfejsu API wskazano FastAPI, które pozwala tworzyć lekkie usługi HTTP oraz endpointy wykorzystywane przez aplikację frontendową.
+
+Zastosowanie osobnej warstwy serwerowej ułatwia rozdzielenie odpowiedzialności poszczególnych komponentów. Aplikacja webowa odpowiada za interakcję z użytkownikiem, natomiast serwer koordynuje przepływ danych, uruchamia moduły przetwarzania mowy i przekazuje zapytania do odpowiednich modeli. Takie podejście ogranicza złożoność części frontendowej oraz pozwala testować poszczególne elementy systemu niezależnie.
+
+\subsubsection{Moduły STT i TTS}
+
+Obsługa interfejsu głosowego wymaga zastosowania modułów odpowiedzialnych za rozpoznawanie mowy oraz syntezę odpowiedzi. W projekcie założono wykorzystanie gotowych rozwiązań, ponieważ główny zakres pracy dotyczy architektury współpracy modeli językowych oraz działania małego modelu na platformie brzegowej. Samodzielna implementacja algorytmów STT i TTS znacząco rozszerzyłaby zakres projektu, nie stanowiąc jednocześnie głównego problemu badawczego.
+
+Do rozpoznawania mowy przewidziano wykorzystanie rozwiązania zgodnego z modelem Whisper, w szczególności implementacji typu faster-whisper, która pozwala uruchamiać transkrypcję w sposób bardziej dostosowany do lokalnych zasobów obliczeniowych. Zadaniem tego modułu jest przekształcenie nagrania użytkownika do postaci tekstowej, która może zostać następnie przekazana do modelu językowego. Synteza mowy pełni funkcję odwrotną i umożliwia przedstawienie odpowiedzi modelu w formie dźwiękowej. W obu przypadkach kluczowe znaczenie mają opóźnienie oraz poprawność działania w języku polskim.
+
+\subsubsection{LLM}
+
+Do uruchamiania modeli językowych wykorzystano środowisko Ollama. Narzędzie to umożliwia lokalne uruchamianie modeli LLM i SLM oraz udostępnianie ich przez interfejs API, co ułatwia integrację z pozostałymi komponentami systemu. Zastosowanie jednego środowiska uruchomieniowego dla modelu ucznia i modelu nauczyciela pozwala ograniczyć liczbę różnic konfiguracyjnych pomiędzy platformami oraz uprościć przebieg testów.
+
+Istotną zaletą wykorzystania Ollama jest możliwość uruchamiania modeli z określonymi parametrami generacji. Parametry takie jak temperatura, długość odpowiedzi, liczba przetwarzanych tokenów kontekstu czy sposób próbkowania mogą wpływać zarówno na jakość odpowiedzi, jak i na czas jej wygenerowania. Z tego względu środowisko to uznano za odpowiednie do prowadzenia badań porównawczych, w których analizowany jest wpływ konfiguracji modelu na działanie asystenta.
+
+\subsubsection{Serwerowy Context Engine}
+
+W celu dynamicznego dostarczania kontekstu do małego modelu językowego zaprojektowano komponent określany jako Context Engine. Jego zadaniem jest cykliczne pobieranie danych, kierowanie zapytań do modelu nauczyciela oraz przygotowywanie syntetycznych podsumowań, które mogą zostać dołączone do promptu modelu ucznia. Zastosowanie takiego komponentu wynika z ograniczeń platformy brzegowej oraz z potrzeby ograniczenia długości kontekstu analizowanego bezpośrednio przez Raspberry Pi.
+
+Context Engine zaimplementowano jako zestaw skryptów w języku Python. Skrypty te mogą być uruchamiane cyklicznie, dzięki czemu kontekst przekazywany do modelu ucznia jest aktualizowany niezależnie od bieżącej rozmowy użytkownika. W momencie obsługi zapytania przygotowany wcześniej kontekst może zostać wstrzyknięty do promptu, co pozwala modelowi lokalnemu korzystać z informacji o stanie systemu bez konieczności samodzielnej analizy pełnych danych historycznych. Takie rozwiązanie ogranicza obciążenie urządzenia brzegowego i zwiększa przewidywalność czasu odpowiedzi.
+
+\subsubsection{Narzędzia badawcze}
+
+Część badawcza wymagała przygotowania środowiska umożliwiającego porównywanie modeli oraz konfiguracji generacji. Z tego względu przewidziano wykorzystanie skryptów testowych w języku Python, które pozwalają automatyzować uruchamianie zapytań, zapisywanie wyników oraz analizę podstawowych metryk. W procesie optymalizacji parametrów można wykorzystać narzędzie Optuna, które wspiera systematyczne przeszukiwanie przestrzeni parametrów i ułatwia porównywanie wielu konfiguracji.
+
+Tak przygotowane środowisko pozwala oddzielić ocenę jakości odpowiedzi od ręcznego uruchamiania pojedynczych testów. Ma to znaczenie szczególnie w przypadku modeli działających na urządzeniu brzegowym, gdzie czas generacji może być zmienny i zależny od obciążenia systemu, długości promptu oraz wybranych parametrów. Automatyzacja testów zwiększa powtarzalność badań i ułatwia późniejsze zestawienie wyników w części badawczej pracy.
