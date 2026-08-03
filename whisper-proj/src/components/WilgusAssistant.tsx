@@ -5,6 +5,7 @@ interface WilgusAssistantProps {
   status: AppStatus
   bubbleText: string | null
   disabled?: boolean
+  studentReady?: boolean
   onClick: () => void
   inputLevel?: number
 }
@@ -13,12 +14,17 @@ export function WilgusAssistant({
   status,
   bubbleText,
   disabled = false,
+  studentReady = true,
   onClick,
   inputLevel = 0,
 }: WilgusAssistantProps) {
-  const visual = WILGUS_BY_STATUS[status]
+  const visual = studentReady
+    ? WILGUS_BY_STATUS[status]
+    : WILGUS_BY_STATUS.PROCESSING
+  const label = studentReady ? visual.label : 'Rozgrzewam model…'
   const levelPercent = Math.round(Math.min(1, Math.max(0, inputLevel)) * 100)
-  const showLevel = status === 'RECORDING'
+  const showLevel = studentReady && status === 'RECORDING'
+  const isDisabled = disabled || !studentReady
 
   return (
     <div className="wilgus-stage">
@@ -30,11 +36,11 @@ export function WilgusAssistant({
 
       <button
         type="button"
-        className={`wilgus-button ${visual.ringClass} ${disabled ? 'wilgus-button-disabled' : ''}`}
+        className={`wilgus-button ${visual.ringClass} ${isDisabled ? 'wilgus-button-disabled' : ''}`}
         onClick={onClick}
-        disabled={disabled}
-        aria-label={visual.label}
-        title={visual.label}
+        disabled={isDisabled}
+        aria-label={label}
+        title={label}
       >
         <img src={visual.src} alt="Wilguś" className="wilgus-image" draggable={false} />
         {showLevel ? (
@@ -44,7 +50,7 @@ export function WilgusAssistant({
         ) : null}
       </button>
 
-      <p className="wilgus-caption">{visual.label}</p>
+      <p className="wilgus-caption">{label}</p>
     </div>
   )
 }

@@ -11,8 +11,10 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parent
 
 
-OLLAMA_URL = os.environ.get("QUANT_OLLAMA_URL", "http://mill-56-rpi.local:11434").rstrip("/")
-OLLAMA_HOSTNAME = urlparse(OLLAMA_URL).hostname or "mill-56-rpi.local"
+# Stara sieć (dom): http://mill-56-rpi.local:11434
+OLLAMA_URL = os.environ.get("QUANT_OLLAMA_URL", "http://172.20.10.2:11434").rstrip("/")
+# Stara sieć (dom): mill-56-rpi.local
+OLLAMA_HOSTNAME = urlparse(OLLAMA_URL).hostname or "172.20.10.2"
 MODELS_DIR = Path(os.environ.get("QUANT_MODELS_DIR", str(ROOT / "models")))
 RPI_SSH = os.environ.get("QUANT_RPI_SSH", f"pi@{OLLAMA_HOSTNAME}")
 REMOTE_MODELS_DIR = os.environ.get("QUANT_REMOTE_MODELS_DIR", "/home/pi/quant/models").rstrip("/")

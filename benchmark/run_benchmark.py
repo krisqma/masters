@@ -41,15 +41,13 @@ MODEL_NUM_CTX_CHOICES = {
 }
 MAX_CONSECUTIVE_EMPTY_TIMEOUTS = 3
 
+# Stara sieć (dom): 192.168.1.173 / mill-56-rpi.local / mill-56-rpi
 DEFAULT_RPI_OLLAMA_URLS = (
-    "http://192.168.1.173:11434",
-    "http://mill-56-rpi.local:11434",
-    "http://mill-56-rpi:11434",
+    "http://172.20.10.2:11434",
 )
+# Stara sieć (dom): 192.168.1.173:9000 / mill-56-rpi.local:9000 / mill-56-rpi:9000
 DEFAULT_RPI_METRICS_URLS = (
-    "http://192.168.1.173:9000",
-    "http://mill-56-rpi.local:9000",
-    "http://mill-56-rpi:9000",
+    "http://172.20.10.2:9000",
 )
 
 # HTTP client: hard limit jak długo czekamy na pełny stream (sekundy).

@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Optional
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+# Exact one-line reply when Teacher finds nothing noteworthy.
+NO_ANOMALY_SENTINEL = "BRAK_ANOMALII"
 
 
 @dataclass(frozen=True)
@@ -21,13 +25,34 @@ TEACHER_SYSTEM_PROMPT = (
     "Otrzymujesz punktowy snapshot odczytów z czujników mieszkania z jednego znacznika czasu. "
     "Nie zakładaj wartości dla brakujących pól i nie mieszaj stanów z innych momentów. "
     "Odpowiadaj WYŁĄCZNIE po polsku (bez innych języków). "
-    "Twoim zadaniem jest zwięzłe podsumowanie stanu mieszkania w 3-5 zdaniach. "
-    "Skup się na: temperaturach w pomieszczeniach (w tym łazience, jeśli jest w snapshocie), "
-    "zużyciu energii, otwartych oknach/drzwiach, obecności osób, jakości powietrza. "
-    "Używaj tylko nazw pomieszczeń z snapshota — nie zmyślaj salonu ani innych pokoi. "
-    "Jeśli coś jest nietypowe (wysoka temperatura, duże zużycie energii, otwarte okno nocą) — zaznacz to. "
-    "Nie powtarzaj wszystkich surowych liczb — interpretuj je."
+    "Twoim JEDYNYM zadaniem jest wykrycie anomalii i ciekawych odchyleń — nie streszczaj całego domu. "
+    "Szukaj m.in.: skrajnych temperatur lub wilgotności, otwartych okien/drzwi, dużego zużycia mocy/energii, "
+    "obecności w nietypowej porze, słabej jakości powietrza (wysoki VOC), sprzecznych odczytów. "
+    "Używaj tylko nazw pomieszczeń i liczb ze snapshota — nic nie zmyślaj. "
+    "Gdy znajdziesz anomalie: wypisz je zwięźle (1–4 krótkie punkty lub zdania) z konkretnymi wartościami. "
+    "Gdy NIC nietypowego nie ma — odpowiedz DOKŁADNIE jedną linią: "
+    f"{NO_ANOMALY_SENTINEL} "
+    "(bez innych słów, bez streszczenia, bez zdań w stylu „wszystko w normie” / „prawidłowa”). "
+    "Zakaz ogólnych podsumowań stanu mieszkania, gdy nie ma anomalii."
 )
+
+
+def normalize_findings(raw: str) -> Optional[str]:
+    """Return findings text, or None when Teacher reports no anomalies."""
+    text = (raw or "").strip()
+    if not text:
+        return None
+    # Accept sentinel alone or as the only meaningful line.
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if len(lines) == 1 and lines[0].upper() == NO_ANOMALY_SENTINEL:
+        return None
+    if text.upper() == NO_ANOMALY_SENTINEL:
+        return None
+    # Strip accidental sentinel prefix/suffix mixed with content.
+    filtered = [ln for ln in lines if ln.upper() != NO_ANOMALY_SENTINEL]
+    if not filtered:
+        return None
+    return "\n".join(filtered)
 
 
 async def ask_teacher(
@@ -37,8 +62,8 @@ async def ask_teacher(
     model: str,
     source_timestamp: str,
     timeout_seconds: float = 120.0,
-) -> TeacherInsight:
-    """Send sensor snapshot to Teacher and return condensed insight."""
+) -> Optional[TeacherInsight]:
+    """Ask Teacher for anomaly findings only. Returns None when none / empty."""
     payload = {
         "model": model,
         "messages": [
@@ -60,6 +85,11 @@ async def ask_teacher(
 
     if not content:
         logger.warning("Teacher returned empty response, body keys: %s", list(body.keys()))
-        content = "[Nauczyciel nie zwrócił analizy]"
+        return None
 
-    return TeacherInsight(summary=content.strip(), source_timestamp=source_timestamp)
+    findings = normalize_findings(content)
+    if findings is None:
+        logger.info("Teacher: no anomalies (%s).", NO_ANOMALY_SENTINEL)
+        return None
+
+    return TeacherInsight(summary=findings, source_timestamp=source_timestamp)

@@ -1,0 +1,11 @@
+artifact,data,producer,estimator_today
+tab:ranking_run1 (Tab. 5.4),results-throttling/*.jsonl,thesis_statistical_analysis.model_summary,score=mean; e2e=median; temp=median w tekście
+tab:ranking_run2 (Tab. 5.5),results-5-trials-nothrottling/*.jsonl,thesis_statistical_analysis.model_summary,score=mean; e2e=median
+fig:score_vs_hall (Rys. 5.2),results-selected-9.05/*.jsonl,thesis_statistical_analysis.make_figures / trial_summary,punkt = mean score i hall_rate per trial Optuny
+fig:regression_r2 (Rys. 5.3),results-selected-9.05/*.jsonl,thesis_statistical_analysis.regression_comparison,R² z OLS / linregress na agregatach trial
+tab:kwantyzacja_wyniki (Tab. 5.7),warm_cache_generation_full_*.jsonl,warm_cache_generation_analysis.build_tables,TTFT/gen/E2E = median; speedup na medianach
+fig:dekompozycja_e2e (Rys. 5.7),warm_cache_generation_full_*.jsonl,warm_cache_generation_analysis.plot_e2e_decomposition,słupki z median TTFT + median generation
+fig:speedup_q8 (Rys. 5.8),warm_cache_generation_full_*.jsonl,warm_cache_generation_analysis.plot_speedup,speedup = median_gen(Q8) / median_gen(wariant)
+fig:tok_s_variant (Rys. 5.10),warm_cache_generation_full_*.jsonl,"warm_cache_generation_analysis (chars/s proxy, potem median)",median(answer_chars / (generation_ms/1000))
+fig:ttft_warm (Rys. 5.12),warm_cache_generation_full_*.jsonl,warm_cache_generation_analysis.grouped_bar TTFT,median TTFT
+tab:wyniki_finalne (Tab. 5.8),results-selected-9.05 → selected_model_confidence_intervals.csv,thesis_statistical_analysis.selected_model_ci / bootstrap_ci,score/hall = mean + bootstrap CI α=0.05 (kod n_boot=5000; TeX pisze 10000); E2E = median bez CI

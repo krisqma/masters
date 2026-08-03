@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -14,6 +16,7 @@ import httpx
 from pydantic import BaseModel, Field
 
 from .config import FALLBACK_STUDENT_STATIC_PREFIX, Settings, get_settings
+from .session_state import ConversationSession
 from .student_warmup import StudentKeepWarm
 from .transcriber import WhisperTranscriber
 from .tts import synthesize_speech
@@ -27,6 +30,8 @@ class HealthResponse(BaseModel):
     device: str
     language: str
     student_warm: bool = False
+    student_status: Literal["warming", "warm", "error"] = "warming"
+    student_error: Optional[str] = None
 
 
 class TranscriptionResponse(BaseModel):
@@ -51,7 +56,9 @@ class TtsRequest(BaseModel):
 
 settings: Settings = get_settings()
 student_keep_warm = StudentKeepWarm(settings)
+conversation_session = ConversationSession()
 transcriber: Optional[WhisperTranscriber] = None
+_warmup_task: Optional[asyncio.Task[None]] = None
 
 
 @asynccontextmanager
@@ -90,6 +97,7 @@ def root() -> dict[str, str]:
         "transcribe": "/api/transcribe",
         "chat": "/api/chat",
         "tts": "/api/tts",
+        "session_new": "/api/session/new",
     }
 
 
@@ -101,6 +109,70 @@ def health() -> HealthResponse:
         device=settings.whisper_device,
         language=settings.whisper_language,
         student_warm=student_keep_warm.student_warm,
+        student_status=student_keep_warm.student_status,
+        student_error=student_keep_warm.student_error,
+    )
+
+
+class SessionNewResponse(BaseModel):
+    status: Literal["warming", "warm", "error"]
+    advanced: bool = False
+    source_timestamp: Optional[str] = None
+    published_facts_chars: Optional[int] = None
+    student_status: Literal["warming", "warm", "error"] = "warming"
+    idle_rotate_seconds: int = 600
+
+
+async def _advance_context_service() -> dict:
+    url = f"{settings.context_service_url.rstrip('/')}/api/context/advance"
+    async with httpx.AsyncClient(timeout=httpx.Timeout(180.0)) as client:
+        resp = await client.post(url)
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def _start_session_warmup(*, reason: str) -> None:
+    global _warmup_task
+    if _warmup_task and not _warmup_task.done():
+        return
+
+    async def _run() -> None:
+        await student_keep_warm.warm_for_session(reason=reason)
+
+    _warmup_task = asyncio.create_task(_run(), name=f"session-warmup-{reason}")
+
+
+@app.post("/api/session/new", response_model=SessionNewResponse, tags=["session"])
+async def session_new() -> SessionNewResponse:
+    """Rotate published home facts and warm Student for a new conversation."""
+    advanced = False
+    source_timestamp: Optional[str] = None
+    facts_chars: Optional[int] = None
+    try:
+        advance_body = await _advance_context_service()
+        advanced = True
+        source_timestamp = advance_body.get("source_timestamp")
+        facts_chars = advance_body.get("published_facts_chars")
+        logger.info(
+            "Session new: context advanced ts=%s facts_chars=%s source=%s",
+            source_timestamp,
+            facts_chars,
+            advance_body.get("source"),
+        )
+    except Exception as error:
+        logger.warning("Session new: context advance failed: %s", error)
+
+    conversation_session.clear_pin()
+    conversation_session.touch()
+    await _start_session_warmup(reason="session_new")
+
+    return SessionNewResponse(
+        status="warming",
+        advanced=advanced,
+        source_timestamp=source_timestamp,
+        published_facts_chars=facts_chars,
+        student_status=student_keep_warm.student_status,
+        idle_rotate_seconds=settings.session_idle_rotate_seconds,
     )
 
 
@@ -202,19 +274,21 @@ async def text_to_speech(request: TtsRequest) -> Response:
 class StudentContext:
     """Prefix-cache-friendly prompt parts from Context Service."""
 
-    __slots__ = ("static_prefix", "dynamic_context")
+    __slots__ = ("static_prefix", "dynamic_context", "source_timestamp")
 
-    def __init__(self, static_prefix: str, dynamic_context: Optional[str]) -> None:
+    def __init__(
+        self,
+        static_prefix: str,
+        dynamic_context: Optional[str],
+        source_timestamp: Optional[str] = None,
+    ) -> None:
         self.static_prefix = static_prefix
         self.dynamic_context = dynamic_context
+        self.source_timestamp = source_timestamp
 
 
-async def _fetch_context() -> StudentContext:
-    """Fetch static prefix + dynamic Teacher context.
-
-    Fails soft: always returns at least the fallback static rules so the Student
-    keeps a stable system prefix for KV cache.
-    """
+async def _fetch_published_context() -> StudentContext:
+    """Fetch published context from Context Service (does not rotate)."""
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(3.0)) as client:
             resp = await client.get(f"{settings.context_service_url}/api/context")
@@ -223,12 +297,30 @@ async def _fetch_context() -> StudentContext:
             body = resp.json()
             static_prefix = body.get("static_prefix") or FALLBACK_STUDENT_STATIC_PREFIX
             dynamic = body.get("dynamic_context")
+            ts = body.get("source_timestamp")
             if body.get("status") != "ready" or not isinstance(dynamic, str) or not dynamic.strip():
-                return StudentContext(static_prefix, None)
-            return StudentContext(static_prefix, dynamic)
+                return StudentContext(static_prefix, None, ts if isinstance(ts, str) else None)
+            return StudentContext(
+                static_prefix,
+                dynamic,
+                ts if isinstance(ts, str) else None,
+            )
     except Exception:
         logger.debug("Context Service unavailable, proceeding with fallback static prefix.")
         return StudentContext(FALLBACK_STUDENT_STATIC_PREFIX, None)
+
+
+async def _get_or_pin_context() -> StudentContext:
+    pin = conversation_session.pin
+    if pin is not None:
+        return StudentContext(pin.static_prefix, pin.dynamic_context, pin.source_timestamp)
+    ctx = await _fetch_published_context()
+    conversation_session.set_pin(
+        static_prefix=ctx.static_prefix,
+        dynamic_context=ctx.dynamic_context,
+        source_timestamp=ctx.source_timestamp,
+    )
+    return ctx
 
 
 def _normalize_history(history: List[ChatHistoryItem]) -> List[Dict[str, str]]:
@@ -262,8 +354,11 @@ def _build_chat_messages(
                 "role": "user",
                 "content": (
                     f"{context.dynamic_context}\n\n"
-                    "Powyższy kontekst domu jest dostępny w tej turze — cytuj go tylko, "
-                    "gdy pytanie dotyczy stanu domu. Uwzględniaj też wcześniejsze wiadomości."
+                    "Powyższy kontekst domu jest dostępny w tej turze. "
+                    "Liczby i pokoje bierz z bloku „Stan mieszkania”; "
+                    "Findings (jeśli są) to tylko opcjonalne anomalie. "
+                    "Cytuj dane tylko, gdy pytanie dotyczy stanu domu. "
+                    "Uwzględniaj też wcześniejsze wiadomości."
                 ),
             }
         )
@@ -354,13 +449,34 @@ async def chat(request: ChatRequest) -> StreamingResponse:
     if not message:
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
 
-    context = await _fetch_context()
+    if student_keep_warm.student_status == "warming":
+        raise HTTPException(
+            status_code=503,
+            detail="Model się rozgrzewa — spróbuj za chwilę.",
+        )
+
+    started = time.monotonic()
+    conversation_session.touch()
+    context = await _get_or_pin_context()
     messages = _build_chat_messages(message, context, request.history)
-    client, upstream_response = await _open_ollama_stream(messages)
+    history_msgs = len(_normalize_history(request.history))
+    facts_chars = len(context.dynamic_context) if context.dynamic_context else 0
+
+    student_keep_warm.set_chat_busy(True)
+    await student_keep_warm.acquire_ollama()
+    try:
+        client, upstream_response = await _open_ollama_stream(messages)
+    except Exception:
+        student_keep_warm.release_ollama()
+        student_keep_warm.set_chat_busy(False)
+        raise
 
     async def event_stream() -> AsyncGenerator[bytes, None]:
+        first_chunk_at: Optional[float] = None
         try:
             async for chunk in _stream_ollama_reply(upstream_response):
+                if first_chunk_at is None:
+                    first_chunk_at = time.monotonic()
                 yield _encode_stream_event("chunk", content=chunk)
         except httpx.TimeoutException:
             yield _encode_stream_event("error", detail="Ollama przekroczyła limit czasu odpowiedzi.")
@@ -373,8 +489,24 @@ async def chat(request: ChatRequest) -> StreamingResponse:
                 detail="Wystąpił nieoczekiwany błąd podczas generowania odpowiedzi.",
             )
         finally:
+            e2e_ms = int((time.monotonic() - started) * 1000)
+            ttfb_ms = (
+                int((first_chunk_at - started) * 1000) if first_chunk_at is not None else None
+            )
+            logger.info(
+                "Chat done: ttfb_ms=%s e2e_ms=%s facts_chars=%d history_msgs=%d "
+                "prompt_msgs=%d context_ts=%s pinned=1",
+                ttfb_ms,
+                e2e_ms,
+                facts_chars,
+                history_msgs,
+                len(messages),
+                context.source_timestamp,
+            )
             yield _encode_stream_event("done")
             await upstream_response.aclose()
             await client.aclose()
+            student_keep_warm.release_ollama()
+            student_keep_warm.set_chat_busy(False)
 
     return StreamingResponse(event_stream(), media_type="application/x-ndjson")

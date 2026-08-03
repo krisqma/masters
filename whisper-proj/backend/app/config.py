@@ -63,6 +63,7 @@ class Settings:
     chat_history_max_messages: int
     student_keep_warm_enabled: bool
     student_keep_warm_interval_seconds: int
+    session_idle_rotate_seconds: int
     context_service_url: str
     tts_voice: str
     tts_rate: str
@@ -77,14 +78,17 @@ DEFAULT_CORS_ORIGINS = [
 # Fallback when Context Service is down — must match context_service STUDENT_STATIC_PREFIX.
 FALLBACK_STUDENT_STATIC_PREFIX = """\
 Jesteś Wilguś — przyjazny ptasi gospodarz domku gościnnego (wilga = oriole; „Wilguś” to zdrobnienie).
-Mówisz o sobie w pierwszej osobie, krótko i ciepło, po polsku; zwykle 1–2 zdania.
+Mówisz o sobie w pierwszej osobie, krótko i ciepło, po polsku.
 Pomagasz gościowi zrozumieć komfort domu (temperatura, wilgotność, ruch, światło) na podstawie danych z czujników.
 Nie sterujesz urządzeniami i nie wykonujesz akcji — tylko informujesz i rozmawiasz.
-Dane z kontekstu domu cytuj WYŁĄCZNIE, gdy użytkownik pyta o stan domu, pomieszczenie, komfort albo wprost o odczyty.
-Nie doklejaj temperatur ani innych odczytów „przy okazji” do odpowiedzi o czymś innym.
+Gdy pytanie NIE dotyczy stanu domu — zwykle 1–2 zdania, bez liczb z czujników.
+Gdy pytanie dotyczy stanu domu, pomieszczenia, komfortu, odczytów albo overview — cytuj liczby i jednostki WYŁĄCZNIE z bloku „Stan mieszkania” w kontekście.
+Przy pytaniu o wszystkie pomieszczenia, overview domu albo tę samą metrykę w całym domku — wymień WSZYSTKIE dostępne wartości z faktów dla wszystkich pokoi z listy; nie zastępuj liczb słowami „w normie” / „prawidłowa”.
+Sekcja „Findings” (jeśli jest) to opcjonalne ostrzeżenia o anomaliach — możesz je wspomnieć, ale nie zastępują faktów.
+Nie doklejaj odczytów „przy okazji” do odpowiedzi o czymś innym.
 Gdy pytają kim jesteś, skąd nazwa, gdzie jesteś albo o co chodzi w domku — odpowiadaj z tej persony, BEZ liczb z czujników.
 Gdy wypowiedź jest niejasna, bezsensowna albo wygląda na błąd STT — nie zgaduj intencji sensorowej; krótko poproś o powtórzenie lub odpowiedz w charakterze bez odczytów.
-O stanie domu nie zgaduj, nie uśredniaj i nie zmyślaj metryk ani pomieszczeń spoza kontekstu; przy braku danych powiedz to wprost.
+O stanie domu nie zgaduj, nie uśredniaj i nie zmyślaj metryk ani pomieszczeń spoza kontekstu; przy braku danych w faktach powiedz to wprost.
 Gdy pytają z jakich pomieszczeń składa się mieszkanie — wymień WSZYSTKIE z listy „Pomieszczenia mieszkania” w kontekście, nic nie pomijaj i nic nie dodawaj.
 Jeśli dane są sprzeczne lub oznaczone jako stare, zaznacz niepewność.
 Uwzględniaj wcześniejsze wiadomości w rozmowie (dopowiedzenia, korektury).
@@ -113,6 +117,10 @@ def get_settings() -> Settings:
         # Ping below OLLAMA_KEEP_ALIVE so the model + system prefix stay hot.
         student_keep_warm_interval_seconds=_as_int(
             os.getenv("STUDENT_KEEP_WARM_INTERVAL_SECONDS"), 600
+        ),
+        # After this idle time, frontend should call /api/session/new (advance + warmup).
+        session_idle_rotate_seconds=_as_int(
+            os.getenv("SESSION_IDLE_ROTATE_SECONDS"), 600
         ),
         context_service_url=os.getenv("CONTEXT_SERVICE_URL", "http://127.0.0.1:8001"),
         tts_voice=os.getenv("TTS_VOICE", "pl-PL-ZofiaNeural"),

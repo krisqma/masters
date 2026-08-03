@@ -1,4 +1,4 @@
-"""Context Service — standalone microservice that feeds Teacher insights to the whisper backend."""
+"""Context Service — published session facts + staging background refresh."""
 
 from __future__ import annotations
 
@@ -34,8 +34,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Context Service",
-    description="Provides Teacher-analyzed smart home context for the Student LLM.",
-    version="1.0.0",
+    description=(
+        "Provides deterministic smart-home sensor facts for the Student LLM, "
+        "plus optional Teacher anomaly findings. "
+        "GET returns the published (session) snapshot; POST /api/context/advance "
+        "rotates published from staging for a new conversation."
+    ),
+    version="1.1.0",
     lifespan=lifespan,
 )
 
@@ -45,6 +50,7 @@ def root() -> dict[str, str]:
     return {
         "service": "context-service",
         "context": "/api/context",
+        "advance": "/api/context/advance",
         "health": "/api/health",
     }
 
@@ -63,12 +69,7 @@ def health() -> dict:
 
 @app.get("/api/context", tags=["context"])
 def get_context() -> dict:
-    """Returns Student prompt parts for prefix-cache-friendly chat.
-
-    ``static_prefix`` is always identical (KV-cache friendly).
-    ``dynamic_context`` changes only when the Teacher refreshes.
-    Whisper backend should send: system=static_prefix, user=dynamic+question.
-    """
+    """Returns the published Student prompt parts (does not rotate)."""
     base = {
         "static_prefix": engine.static_prefix,
         "dynamic_context": engine.dynamic_context,
@@ -86,6 +87,13 @@ def get_context() -> dict:
     return {
         **base,
         "status": "ready",
-        "source_timestamp": insight.source_timestamp if insight else None,
+        "source_timestamp": engine.source_timestamp,
         "insight": insight.summary if insight else None,
     }
+
+
+@app.post("/api/context/advance", tags=["context"])
+async def advance_context() -> dict:
+    """Publish staging (or a fresh snapshot) for a new conversation session."""
+    result = await engine.advance()
+    return result

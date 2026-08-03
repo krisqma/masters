@@ -53,6 +53,7 @@ class SensorSnapshot:
     apartment_rooms: Optional[List[str]] = None
 
     def to_text(self) -> str:
+        """Full snapshot text for the Teacher (grouped by room)."""
         if not self.readings:
             return f"[{self.timestamp}] Brak odczytów z czujników."
 
@@ -70,6 +71,21 @@ class SensorSnapshot:
             lines.append(f"\n  {room_name}:")
             for label, value in sorted(sensors.items()):
                 lines.append(f"    - {label}: {value}")
+        return "\n".join(lines)
+
+    def to_student_facts_text(self) -> str:
+        """Deterministic bullet list for the Student (benchmark-style facts)."""
+        if not self.readings:
+            return f"Stan mieszkania na {self.timestamp} UTC:\n(brak odczytów z czujników)"
+
+        lines = [f"Stan mieszkania na {self.timestamp} UTC:"]
+        rooms = self.apartment_rooms or []
+        if rooms:
+            lines.append(f"Pomieszczenia mieszkania (pełna lista): {', '.join(rooms)}.")
+        for room_key, sensors in sorted(self.readings.items()):
+            room_name = ROOM_LABELS.get(room_key, room_key)
+            for label, value in sorted(sensors.items()):
+                lines.append(f"- {room_name}: {label} = {value}")
         return "\n".join(lines)
 
 

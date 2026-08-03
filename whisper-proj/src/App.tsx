@@ -5,6 +5,7 @@ import { WilgusAssistant } from './components/WilgusAssistant'
 import { useAudioRecorder } from './hooks/useAudioRecorder'
 import { useFollowUpListener } from './hooks/useFollowUpListener'
 import { useMicDevices } from './hooks/useMicDevices'
+import { useStudentReady } from './hooks/useStudentReady'
 import { useWakeWord } from './hooks/useWakeWord'
 import { playAck, stopAck } from './services/ackService'
 import {
@@ -12,6 +13,7 @@ import {
   streamChatReply,
   type ChatHistoryItem,
 } from './services/chatService'
+import { startNewSession } from './services/sessionService'
 import { extractSentences, SpeechQueue } from './services/speechQueue'
 import { transcribeAudio } from './services/whisperService'
 import type { AppStatus, ChatMessage, ChatRole } from './types'
@@ -20,6 +22,9 @@ import './App.css'
 
 const BOOT_MESSAGE =
   'Cześć! Jestem Wilguś. Powiedz „hej wilguś” albo kliknij mnie, żeby zacząć.'
+
+/** Default matches backend SESSION_IDLE_ROTATE_SECONDS. */
+const DEFAULT_IDLE_ROTATE_MS = 600_000
 
 const buildChatHistory = (messages: ChatMessage[]): ChatHistoryItem[] =>
   messages
@@ -58,6 +63,14 @@ function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [processingHint, setProcessingHint] = useState<string | null>(null)
   const [followUpSecondsLeft, setFollowUpSecondsLeft] = useState<number | null>(null)
+  const {
+    status: studentStatus,
+    error: studentError,
+    backendReachable,
+    studentReady,
+    markWarming,
+    refreshNow,
+  } = useStudentReady()
 
   const wakeWordSupportRef = useRef(true)
   const bootMessageAddedRef = useRef(false)
@@ -67,10 +80,17 @@ function App() {
   const awaitingSpeechIdleRef = useRef(false)
   const enterFollowUpAfterReplyRef = useRef(false)
   const statusRef = useRef<AppStatus>(status)
+  const lastActivityAtRef = useRef(Date.now())
+  const idleRotateMsRef = useRef(DEFAULT_IDLE_ROTATE_MS)
+  const sessionRotateInFlightRef = useRef(false)
 
   useEffect(() => {
     statusRef.current = status
   }, [status])
+
+  const touchActivity = useCallback(() => {
+    lastActivityAtRef.current = Date.now()
+  }, [])
 
   const idleStatus = useCallback(
     (): AppStatus => (wakeWordSupportRef.current ? 'LISTENING_WAKE_WORD' : 'IDLE'),
@@ -158,6 +178,7 @@ function App() {
 
   const handleRecordingComplete = useCallback(
     async (audioBlob: Blob) => {
+      touchActivity()
       if (audioBlob.size === 0) {
         addMessage('system', '[BŁĄD] Nagranie jest puste. Spróbuj ponownie.')
         goIdle()
@@ -283,30 +304,92 @@ function App() {
         goIdle()
       }
     },
-    [addMessage, appendToMessage, goFollowUp, goIdle, messages],
+    [addMessage, appendToMessage, goFollowUp, goIdle, messages, touchActivity],
+  )
+
+  const beginNewSession = useCallback(
+    async (reason: 'manual' | 'idle') => {
+      if (sessionRotateInFlightRef.current) {
+        return
+      }
+      if (
+        statusRef.current === 'RECORDING' ||
+        statusRef.current === 'PROCESSING' ||
+        statusRef.current === 'SPEAKING'
+      ) {
+        return
+      }
+
+      sessionRotateInFlightRef.current = true
+      speechQueueRef.current?.cancel()
+      awaitingSpeechIdleRef.current = false
+      streamFinishedRef.current = true
+      stopAck()
+      setProcessingHint(null)
+      setFollowUpSecondsLeft(null)
+      enterFollowUpAfterReplyRef.current = false
+      markWarming()
+
+      const infoLabel =
+        reason === 'idle'
+          ? '[INFO] Brak aktywności — nowa rozmowa, rozgrzewam model…'
+          : '[INFO] Nowa rozmowa — rozgrzewam model…'
+
+      setMessages([
+        createMessage('wilga', BOOT_MESSAGE),
+        createMessage('system', infoLabel),
+      ])
+      setStatus(idleStatus())
+
+      try {
+        const result = await startNewSession()
+        if (result.idle_rotate_seconds > 0) {
+          idleRotateMsRef.current = result.idle_rotate_seconds * 1000
+        }
+        touchActivity()
+        refreshNow()
+        addMessage(
+          'system',
+          result.advanced
+            ? '[INFO] Kontekst domu odświeżony — czekam na rozgrzanie modelu.'
+            : '[INFO] Sesja zresetowana — czekam na rozgrzanie modelu.',
+        )
+      } catch (error) {
+        addMessage('system', `[BŁĄD] ${toMessage(error)}`)
+        refreshNow()
+      } finally {
+        sessionRotateInFlightRef.current = false
+      }
+    },
+    [addMessage, idleStatus, markWarming, refreshNow, touchActivity],
   )
 
   const handleNewConversation = useCallback(() => {
-    if (
-      status === 'RECORDING' ||
-      status === 'PROCESSING' ||
-      status === 'SPEAKING'
-    ) {
-      return
+    void beginNewSession('manual')
+  }, [beginNewSession])
+
+  // Auto new session after idle (same path as „Nowa rozmowa”).
+  useEffect(() => {
+    const timerId = window.setInterval(() => {
+      if (!studentReady || sessionRotateInFlightRef.current) {
+        return
+      }
+      if (
+        statusRef.current === 'RECORDING' ||
+        statusRef.current === 'PROCESSING' ||
+        statusRef.current === 'SPEAKING'
+      ) {
+        return
+      }
+      const idleMs = Date.now() - lastActivityAtRef.current
+      if (idleMs >= idleRotateMsRef.current) {
+        void beginNewSession('idle')
+      }
+    }, 15_000)
+    return () => {
+      window.clearInterval(timerId)
     }
-    speechQueueRef.current?.cancel()
-    awaitingSpeechIdleRef.current = false
-    streamFinishedRef.current = true
-    stopAck()
-    setProcessingHint(null)
-    setFollowUpSecondsLeft(null)
-    enterFollowUpAfterReplyRef.current = false
-    setMessages([
-      createMessage('wilga', BOOT_MESSAGE),
-      createMessage('system', '[INFO] Nowa rozmowa — historia wyczyszczona.'),
-    ])
-    setStatus(idleStatus())
-  }, [idleStatus, status])
+  }, [beginNewSession, studentReady])
 
   const {
     devices,
@@ -334,6 +417,10 @@ function App() {
 
   const startRecordingFlow = useCallback(
     async () => {
+      if (!studentReady) {
+        return
+      }
+
       const current = statusRef.current
       if (
         current === 'RECORDING' ||
@@ -343,6 +430,7 @@ function App() {
         return
       }
 
+      touchActivity()
       speechQueueRef.current?.cancel()
       awaitingSpeechIdleRef.current = false
       enterFollowUpAfterReplyRef.current = false
@@ -358,7 +446,7 @@ function App() {
         goIdle()
       }
     },
-    [addMessage, goIdle, startRecording],
+    [addMessage, goIdle, startRecording, studentReady, touchActivity],
   )
 
   const handleWakeWordDetected = useCallback(() => {
@@ -384,7 +472,7 @@ function App() {
   }, [])
 
   useFollowUpListener({
-    enabled: status === 'LISTENING_FOLLOW_UP',
+    enabled: studentReady && status === 'LISTENING_FOLLOW_UP',
     deviceId,
     onSpeechDetected: handleFollowUpSpeech,
     onTimeout: handleFollowUpTimeout,
@@ -395,7 +483,7 @@ function App() {
     isSupported: isWakeWordSupported,
     isListening: isWakeWordListening,
   } = useWakeWord({
-    enabled: status === 'LISTENING_WAKE_WORD',
+    enabled: studentReady && status === 'LISTENING_WAKE_WORD',
     onWakeWordDetected: handleWakeWordDetected,
     onError: handleWakeWordError,
   })
@@ -432,7 +520,7 @@ function App() {
   }, [addMessage, isWakeWordSupported])
 
   const handleToggleRecording = useCallback(() => {
-    if (status === 'PROCESSING' || status === 'SPEAKING') {
+    if (!studentReady || status === 'PROCESSING' || status === 'SPEAKING') {
       return
     }
 
@@ -442,14 +530,19 @@ function App() {
     }
 
     void startRecordingFlow()
-  }, [isRecording, startRecordingFlow, status, stopRecording])
+  }, [isRecording, startRecordingFlow, status, stopRecording, studentReady])
 
   const latestWilgaText =
     [...messages].reverse().find((message) => message.role === 'wilga' && message.content.trim())
       ?.content ?? null
 
   let bubbleText: string | null = null
-  if (status === 'PROCESSING') {
+  if (!studentReady) {
+    bubbleText =
+      !backendReachable || studentStatus === 'error'
+        ? 'Jeszcze nie mogę rozmawiać — czekam na model…'
+        : 'Rozgrzewam model… zaraz będę gotowy.'
+  } else if (status === 'PROCESSING') {
     bubbleText = processingHint || 'Hmm, myślę…'
   } else if (status === 'SPEAKING') {
     bubbleText = latestWilgaText
@@ -461,7 +554,7 @@ function App() {
     bubbleText = latestWilgaText
   }
 
-  const wilgusDisabled = status === 'PROCESSING' || status === 'SPEAKING'
+  const wilgusDisabled = !studentReady || status === 'PROCESSING' || status === 'SPEAKING'
 
   return (
     <main className="app-shell">
@@ -471,18 +564,21 @@ function App() {
             <p className="app-kicker">Asystent głosowy domu</p>
             <h1 className="app-title">Wilguś</h1>
           </div>
+          <VoiceControls
+            status={status}
+            isWakeWordSupported={isWakeWordSupported}
+            isWakeWordListening={isWakeWordListening}
+            devices={devices}
+            deviceId={deviceId}
+            onDeviceChange={setDeviceId}
+            onNewConversation={handleNewConversation}
+            followUpSecondsLeft={followUpSecondsLeft}
+            studentStatus={studentStatus}
+            studentReady={studentReady}
+            studentError={studentError}
+            backendReachable={backendReachable}
+          />
         </header>
-
-        <VoiceControls
-          status={status}
-          isWakeWordSupported={isWakeWordSupported}
-          isWakeWordListening={isWakeWordListening}
-          devices={devices}
-          deviceId={deviceId}
-          onDeviceChange={setDeviceId}
-          onNewConversation={handleNewConversation}
-          followUpSecondsLeft={followUpSecondsLeft}
-        />
 
         <div className="app-main">
           <ChatTranscript messages={messages} />
@@ -490,6 +586,7 @@ function App() {
             status={status}
             bubbleText={bubbleText}
             disabled={wilgusDisabled}
+            studentReady={studentReady}
             onClick={handleToggleRecording}
             inputLevel={inputLevel}
           />

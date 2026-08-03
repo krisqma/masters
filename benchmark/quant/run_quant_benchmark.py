@@ -19,12 +19,15 @@ ROOT = Path(__file__).resolve().parent
 
 GOLDEN_PATH = ROOT.parent / "data" / "golden.jsonl"
 
-OLLAMA_URL = os.environ.get("QUANT_OLLAMA_URL", "http://mill-56-rpi.local:11434").rstrip("/")
-METRICS_URL = os.environ.get("QUANT_METRICS_URL", "http://mill-56-rpi.local:9090/metrics")
+# Stara sieć (dom): http://mill-56-rpi.local:11434
+OLLAMA_URL = os.environ.get("QUANT_OLLAMA_URL", "http://172.20.10.2:11434").rstrip("/")
+# Stara sieć (dom): http://mill-56-rpi.local:9090/metrics
+METRICS_URL = os.environ.get("QUANT_METRICS_URL", "http://172.20.10.2:9090/metrics")
 RESULTS_DIR = Path(os.environ.get("QUANT_RESULTS_DIR", str(ROOT / "results")))
 RUN_ID = os.environ.get("QUANT_RUN_ID", time.strftime("quant_%Y%m%d_%H%M%S"))
 
-OLLAMA_HOSTNAME = urlparse(OLLAMA_URL).hostname or "mill-56-rpi.local"
+# Stara sieć (dom): mill-56-rpi.local
+OLLAMA_HOSTNAME = urlparse(OLLAMA_URL).hostname or "172.20.10.2"
 RPI_SSH = os.environ.get("QUANT_RPI_SSH", f"pi@{OLLAMA_HOSTNAME}")
 REMOTE_MODELS_DIR = os.environ.get("QUANT_REMOTE_MODELS_DIR", "/home/pi/quant/models").rstrip("/")
 REMOTE_OLLAMA_HOST = os.environ.get("QUANT_REMOTE_OLLAMA_HOST", "127.0.0.1:11434")
