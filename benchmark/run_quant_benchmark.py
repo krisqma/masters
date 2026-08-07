@@ -52,13 +52,12 @@ FIXED_PARAMS = {
     "stream": True,
 }
 
-# Stara sieć (dom): 192.168.1.173 / mill-56-rpi.local / mill-56-rpi
+# Hotspot: 172.20.10.2 / mill-56-rpi.local
 DEFAULT_RPI_OLLAMA_URLS = (
-    "http://172.20.10.2:11434",
+    "http://192.168.1.173:11434",
 )
-# Stara sieć (dom): 192.168.1.173:9000 / mill-56-rpi.local:9000 / mill-56-rpi:9000
 DEFAULT_RPI_METRICS_URLS = (
-    "http://172.20.10.2:9000",
+    "http://192.168.1.173:9000",
 )
 
 REQUEST_TIMEOUT = int(os.environ.get("OLLAMA_REQUEST_TIMEOUT", "120"))
@@ -86,7 +85,7 @@ W_LATENCY_E2E = W_LATENCY / 2.0
 W_LATENCY_TTFT = W_LATENCY / 2.0
 
 # Stara sieć: krisqma@mill-56-rpi
-DEFAULT_RPI_SSH = "krisqma@172.20.10.2"
+DEFAULT_RPI_SSH = "krisqma@192.168.1.173"
 DEFAULT_REMOTE_MODELS_DIR = "/home/krisqma/quant/models"
 REMOTE_OLLAMA_HOST = os.environ.get("QUANT_REMOTE_OLLAMA_HOST", "127.0.0.1:11434")
 

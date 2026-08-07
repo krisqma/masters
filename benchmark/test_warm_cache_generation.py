@@ -44,12 +44,11 @@ FIXED_PARAMS = {
 
 REQUEST_TIMEOUT = 120
 MODEL_LOAD_TIMEOUT = 900
-# Stara sieć (dom): 192.168.1.173 / mill-56-rpi.local / mill-56-rpi
+# Hotspot: 172.20.10.2 / mill-56-rpi.local
 DEFAULT_RPI_OLLAMA_URLS = (
-    "http://172.20.10.2:11434",
+    "http://192.168.1.173:11434",
 )
-# Stara sieć: krisqma@mill-56-rpi
-DEFAULT_RPI_SSH = "krisqma@172.20.10.2"
+DEFAULT_RPI_SSH = "krisqma@192.168.1.173"
 DEFAULT_REMOTE_MODELS_DIR = "/home/krisqma/quant/models"
 DEFAULT_REMOTE_OLLAMA_HOST = "127.0.0.1:11434"
 
