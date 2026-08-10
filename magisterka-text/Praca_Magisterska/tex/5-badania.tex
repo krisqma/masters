@@ -7,16 +7,16 @@
 \section{Część badawcza: analiza porównawcza i optymalizacja SLM na urządzeniu brzegowym}
 \label{sec:modele}
 
-Niniejszy rozdział dokumentuje cztery kolejne odkrycia badawcze, z~których każde
-zmieniało kierunek dalszych eksperymentów. Pierwsze z~nich dotyczyło dławienia
-termicznego procesora Raspberry~Pi~5 jako warunku koniecznego rzetelnego pomiaru
-opóźnień i~jakości odpowiedzi. Drugie ujawniło dominację flagi \texttt{hallucination\_flag}
-nad wpływem hiperparametrów inferencji. Trzecie wskazało, że kwantyzacja modeli
-wpływa na czas generacji tokenów (\emph{generation\_ms}), lecz nie na metrykę
-E2E, gdy prefill (TTFT) maskuje efekt precyzji wag. Czwarte potwierdziło, że
-\emph{prefix caching} eliminuje TTFT jako wąskie gardło przy długim prompcie
-systemowym. Każde odkrycie prowadziło do kolejnego, bardziej ukierunkowanego
-eksperymentu opisanego w~odpowiedniej podsekcji.
+Niniejszy rozdział dokumentuje sekwencję etapów badawczych, z~których każdy
+zmieniał kierunek kolejnych eksperymentów. Najpierw ustalono warunki wiarygodnego
+pomiaru na Raspberry~Pi~5 (chłodzenie aktywne) i~przeszukano hiperparametry
+inferencji biblioteką Optuna: okazało się, że o~wyniku decyduje flaga
+halucynacji, a~nie tuning parametrów. Następnie zbadano kwantyzację GGUF;
+przy zimnym cache efekt na E2E był zamaskowany przez TTFT, co doprowadziło
+do rozdzielenia protokołów \emph{cold} i~\emph{warm cache} oraz do modelowania
+czasów generacji rozkładem log-normalnym. Na końcu przełożono te wnioski na
+układanie promptu pod \emph{prefix caching}. Każdy etap prowadzi do kolejnego,
+bardziej ukierunkowanego eksperymentu.
 
 % ============================================================
 \subsection{Architektura i metodologia systemu benchmarkowego}
@@ -116,10 +116,10 @@ Wagi jakościowe (0{,}40 / 0{,}30 / 0{,}20) stanowią świadomy wybór projektow
 numer~1 dla asystenta informującego o~stanie domu. Składniki opóźnienia (E2E
 i~TTFT, łącznie 0{,}10) są rozdzielone, ponieważ moduł TTS może rozpocząć
 syntezę mowy przed zakończeniem generacji tokenów. Capy 90\,s (E2E) i~45\,s
-(TTFT) zastąpiły wcześniejszy cap 20\,s: przy capie 20\,s wszystkie mediany
-E2E w~Run~1 przekraczały próg, przez co \emph{latency\_bonus} był zerowy
-dla wszystkich triali i~Optuna nie różnicowała konfiguracji pod względem czasu
-(sekcja~\ref{subsec:run1}).
+(TTFT) zastąpiły wcześniejszy cap 20\,s: przy capie 20\,s wszystkie typowe
+E2E w~pierwszym przebiegu bez chłodzenia przekraczały próg, przez co
+\emph{latency\_bonus} był zerowy dla wszystkich triali i~Optuna nie różnicowała
+konfiguracji pod względem czasu (sekcja~\ref{subsec:run1}).
 
 \begin{equation}
   \label{eq:composite_score}
@@ -137,6 +137,13 @@ i~\emph{conciseness}, a~$\ell = 0{,}05 \cdot (1 - \min(\mathrm{e2e\_ms}/90\,000,
 Metryki jakościowe nawiązują do literatury: RAGAS (\emph{faithfulness},
 \emph{answer\_relevancy}), ConCISE (\emph{conciseness}) oraz DefAn
 (spójność odpowiedzi na parafrazy).
+
+Dla opóźnień w~dalszej części rozdziału przyjęto dwa modele robocze:
+przy Optunie (zmienny prompt, cold start) E2E raportuje się jako
+\textbf{średnia~$\pm\sigma$} przy założeniu rozkładu normalnego; przy
+pomiarach kwantyzacji (warm/cold, $n\approx 100$) czasy dodatnie i~prawostronnie
+skośne modeluje się rozkładem \textbf{log-normalnym}, a~lokalizację podaje się
+jako medianę modelu~$e^{\hat\mu}$ z~przedziałem~$e^{\hat\mu\pm\hat\sigma}$.
 
 \subsubsection{Przestrzeń hiperparametrów i Optuna}
 
@@ -166,8 +173,8 @@ Pełna siatka parametrów wynosiłaby $8 \times 3 \times 3 \times 5 \times 4
 ($80 \times 20 = 1600$ ewaluacji LLM-judge) osiąga porównywalne pokrycie
 obszarów obiecujących dzięki bayesowskiemu ukierunkowaniu. Alokacja triali:
 \texttt{gemma3:4b} i~\texttt{gemma2:2b} po 30~triali, \texttt{llama3.2:3b}
-i~\texttt{qwen2.5:3b} po 10~triali; \texttt{phi3.5} pominięto po Run~1
-(sekcja~\ref{subsec:run1}).
+i~\texttt{qwen2.5:3b} po 10~triali; \texttt{phi3.5} pominięto po pierwszym
+przebiegu z~dławieniem termicznym (sekcja~\ref{subsec:run1}).
 
 \subsubsection{Modele kandydujące}
 
@@ -185,7 +192,7 @@ przedstawia modele wraz z~informacją o~udziale w~benchmarku Optuny.
     Model & Parametry & GGUF Q4\_K\_M & Producent & W benchmarku? \\
     \hline
     Llama~3.2~3B  & 3{,}2~mld & ${\sim}$2{,}0~GB & Meta       & Tak (10~triali) \\
-    Phi-3.5 Mini  & 3{,}8~mld & ${\sim}$2{,}4~GB & Microsoft  & Run~1; wykluczony$^\dagger$ \\
+    Phi-3.5 Mini  & 3{,}8~mld & ${\sim}$2{,}4~GB & Microsoft  & Wykluczony$^\dagger$ \\
     Gemma~2~2B    & 2{,}6~mld & ${\sim}$1{,}7~GB & Google     & Tak (30~triali) \\
     Gemma~3~4B    & 4{,}0~mld & ${\sim}$2{,}3~GB & Google     & Tak (30~triali) \\
     Qwen~2.5~3B   & 3{,}0~mld & ${\sim}$2{,}0~GB & Alibaba    & Tak (10~triali) \\
@@ -195,46 +202,44 @@ przedstawia modele wraz z~informacją o~udziale w~benchmarku Optuny.
 
   \vspace{0.5em}
   \footnotesize
-  $^\dagger$ \texttt{phi3.5}: 49\% halucynacji i~24\% timeoutów w~Run~2;
+  $^\dagger$ \texttt{phi3.5}: 49\% halucynacji i~24\% timeoutów po chłodzeniu;
   przy $20 \times 30$ promptach samo oczekiwanie na timeouty trwałoby ok.~1{,}9~h,
-  dane nieużyteczne do oceny jakości $\rightarrow$ wykluczony z~Run~3.
+  dane nieużyteczne do oceny jakości $\rightarrow$ wykluczony z~pełnej Optuny.
 
-  $^\ddagger$ \texttt{bielik-4.5b}: mediana E2E Q8\_0 $= 65{,}6$~s $\rightarrow$
-  zbyt wolny do pętli Optuny; uwzględniony wyłącznie w~eksperymencie kwantyzacji
-  (sekcja~\ref{subsec:kwantyzacja}).
+  $^\ddagger$ \texttt{bielik-4.5b}: mediana modelu LN czasu generacji Q8\_0
+  $\approx 66$~s $\rightarrow$ zbyt wolny do pętli Optuny; uwzględniony wyłącznie
+  w~eksperymencie kwantyzacji (sekcja~\ref{subsec:kwantyzacja}).
 \end{table}
 
 
 % ============================================================
-\subsection{Run~1: Baseline i odkrycie dławienia termicznego}
-\label{subsec:run1}
+\subsection{Etap Optuna: chłodzenie, hiperparametry i dominacja halucynacji}
+\label{subsec:optuna}
 % ============================================================
 
-Pierwszy przebieg benchmarku (Run~1, \texttt{dataset=results-throttling})
-wykonał pięć triali Optuny na pięciu modelach bez aktywnego chłodzenia
-Raspberry~Pi~5. W~każdym z~500~rekordów (\texttt{throttling\_rate}$= 100\%$)
-procesor pracował w~trybie dławienia termicznego: temperatura CPU wynosiła
-od 84{,}0\,°C do 91{,}7\,°C (mediana 88{,}9\,°C). Na Raspberry~Pi~5 skalowanie
-częstotliwości aktywuje się ok.~80\,°C, a~twarde dławienie
-(\texttt{vcgencmd get\_throttled 0x2}) ok.~85\,°C.
+\subsubsection{Warunek termiczny pomiaru}
+\label{subsec:run1}
+\label{subsec:run2}
 
-Mechanizm fałszywego obniżenia jakości jest następujący: przy przekroczeniu
-limitu czasu (60\,s) Ollama zwraca pustą odpowiedź, którą LLM-judge klasyfikuje
-jako halucynację (\texttt{hallucination\_flag}$= \mathrm{true}$, score $= 0$).
-W~Run~1 odnotowano 169~timeoutów; każdy z~nich dał pustą odpowiedź i~flagę
-halucynacji (korelacja 100\%). Dla \texttt{gemma3:4b} 42 z~100~rekordów
-($42\%$) zakończyło się timeoutem, a~każdy timeout oznaczał halucynację.
+Pierwszy przebieg Optuny (\texttt{dataset=results-throttling}, pięć triali
+na pięciu modelach) wykonano bez aktywnego chłodzenia Raspberry~Pi~5.
+W~każdym z~500~rekordów (\texttt{throttling\_rate}$= 100\%$) procesor pracował
+w~trybie dławienia: temperatura CPU 84{,}0--91{,}7\,°C (mediana 88{,}9\,°C).
+Na Raspberry~Pi~5 skalowanie częstotliwości aktywuje się ok.~80\,°C, a~twarde
+dławienie (\texttt{vcgencmd get\_throttled 0x2}) ok.~85\,°C.
 
-Ranking modeli w~Run~1 (tabela~\ref{tab:ranking_run1}) jest w~zasadzie
-fałszywy: \texttt{gemma2:2b} zajmuje pierwsze miejsce (score $= 0{,}693$),
-podczas gdy \texttt{gemma3:4b} --- model docelowy o~najwyższej jakości
-semantycznej --- spada na czwarte miejsce (score $= 0{,}497$, halucynacje
-$42\%$). Większe modele generują więcej tokenów i~dłużej obciążają CPU,
-co przy braku chłodzenia prowadzi do timeoutów i~sztucznie zaniżonego score.
+Przy przekroczeniu limitu czasu (60\,s) Ollama zwraca pustą odpowiedź, którą
+LLM-judge klasyfikuje jako halucynację (score $= 0$). Odnotowano 169~timeoutów
+z~korelacją 100\% względem flagi halucynacji. Dla \texttt{gemma3:4b} 42\%
+rekordów kończyło się timeoutem. Ranking (tabela~\ref{tab:ranking_run1}) był
+w~zasadzie fałszywy: \texttt{gemma2:2b} zajmował pierwsze miejsce, a~lepszy
+semantycznie \texttt{gemma3:4b} spadał na czwarte --- większe modele dłużej
+obciążają CPU i~przy braku chłodzenia generują timeouty.
 
 \begin{table}[H]
   \centering
-  \caption{Ranking modeli w~Run~1 (throttling 100\%, \texttt{results-throttling}).}
+  \caption{Ranking modeli bez aktywnego chłodzenia
+           (\texttt{results-throttling}, throttling 100\%).}
   \label{tab:ranking_run1}
   \begin{tabular}{clccc}
     \hline
@@ -249,26 +254,19 @@ co przy braku chłodzenia prowadzi do timeoutów i~sztucznie zaniżonego score.
   \end{tabular}
 \end{table}
 
-Wniosek z~Run~1: stabilność termiczna platformy brzegowej jest warunkiem
-koniecznym wiarygodnego benchmarku. Bez niej ranking odzwierciedla głównie
-odporność modelu na dławienie, a~nie jego jakość semantyczną. Odkrycie to
-motywowało Run~2 z~aktywnym chłodzeniem.
-
-
-% ============================================================
-\subsection{Run~2: Walidacja po instalacji chłodzenia aktywnego}
-\label{subsec:run2}
-% ============================================================
-
-Po instalacji radiatora i~wentylatora sterowanego GPIO (Run~2,
-\texttt{dataset=results-5-trials-nothrottling}) dławienie termiczne spadło
-do 0\% (0/500 rekordów). Temperatura CPU utrzymywała się w~zakresie
-57{,}6--73{,}6\,°C (mediana 65{,}3\,°C). Ranking modeli uległ istotnej
-korekcie (tabela~\ref{tab:ranking_run2}).
+Po instalacji radiatora i~wentylatora sterowanego GPIO
+(\texttt{dataset=results-5-trials-nothrottling}) dławienie spadło do 0\%
+(0/500 rekordów), a~temperatura CPU do 57{,}6--73{,}6\,°C (mediana 65{,}3\,°C).
+Ranking uległ korekcie (tabela~\ref{tab:ranking_run2}): \texttt{gemma3:4b}
+awansował na miejsce~1 (score $0{,}806$, halucynacje $4\%$), a~E2E skróciło
+się z~57\,584~ms do 31\,742~ms ($1{,}81\times$). Wniosek: stabilność termiczna
+jest warunkiem koniecznym wiarygodnego benchmarku na urządzeniu brzegowym ---
+bez niej ranking mierzy odporność na dławienie, nie jakość modelu.
 
 \begin{table}[H]
   \centering
-  \caption{Ranking modeli w~Run~2 (0\% throttling, \texttt{results-5-trials-nothrottling}).}
+  \caption{Ranking modeli po chłodzeniu aktywnym
+           (\texttt{results-5-trials-nothrottling}, 0\% throttling).}
   \label{tab:ranking_run2}
   \begin{tabular}{clccc}
     \hline
@@ -283,34 +281,17 @@ korekcie (tabela~\ref{tab:ranking_run2}).
   \end{tabular}
 \end{table}
 
-Model \texttt{gemma3:4b} awansował z~miejsca~4 na miejsce~1. Score wzrósł
-z~0{,}497 do 0{,}806 ($+62{,}3\%$), wskaźnik halucynacji spadł z~42\% do 4\%,
-a~mediana E2E skróciła się z~57\,584~ms do 31\,742~ms ($1{,}81\times$ szybciej).
-Udział timeoutów zmalał z~42\% do 2\%.
-
-Porównanie najlepszego i~najgorszego triala \texttt{gemma3:4b} w~Run~2 ujawnia
-wstępną zapowiedź odkrycia z~sekcji~\ref{subsec:hallucination_dominance}:
-trial~4 osiągnął score $= 0{,}841$ (halucynacje 0\%), trial~1 --- score
-$= 0{,}751$ (halucynacje 10\%), lecz \emph{nonhall\_score} wynosił odpowiednio
-0{,}841 i~0{,}835 (różnica 0{,}006). Optuna różnicowała głównie częstość
-halucynacji, nie jakość odpowiedzi w~przypadkach poprawnych. Run~2 potwierdził
-\texttt{gemma3:4b} jako kandydata produkcyjnego i~uzasadnił pełny Run~3
-(80~triali Optuny, sekcja~\ref{subsec:hallucination_dominance}).
-
-
-% ============================================================
-\subsection{Dominacja flagi halucynacji — reorientacja celu badań}
+\subsubsection{Dominacja flagi halucynacji}
 \label{subsec:hallucination_dominance}
-% ============================================================
 
-Run~3 (\texttt{dataset=results-selected-9.05}, 80~triali) umożliwił
-statystyczną analizę źródeł wariancji \emph{composite score}. Regresja
-wieloczynnikowa (tabela regresji, rysunek~\ref{fig:regression_r2}) wykazała,
-że sama flaga halucynacji wyjaśnia $R^2 = 0{,}9922$ wariancji score ---
-hiperparametry inferencji wyjaśniają jedynie $R^2 = 0{,}2997$. Model
-(\texttt{model\_only}) daje $R^2 = 0{,}8201$; dodanie hiperparametrów
-(\texttt{model\_plus\_hparams}) podnosi $R^2$ do 0{,}8587 ($\Delta R^2 = 0{,}039$).
-Pełny model osiąga $R^2 = 0{,}9982$.
+Pełny przebieg Optuny (\texttt{dataset=results-selected-9.05}, 80~triali)
+umożliwił analizę źródeł wariancji \emph{composite score}. Regresja
+wieloczynnikowa (rysunek~\ref{fig:regression_r2}) wykazała, że sama flaga
+halucynacji wyjaśnia $R^2 = 0{,}9922$ wariancji score --- hiperparametry
+inferencji wyjaśniają jedynie $R^2 = 0{,}2997$. Model (\texttt{model\_only})
+daje $R^2 = 0{,}8201$; dodanie hiperparametrów (\texttt{model\_plus\_hparams})
+podnosi $R^2$ do 0{,}8587 ($\Delta R^2 = 0{,}039$). Pełny model osiąga
+$R^2 = 0{,}9982$.
 
 \begin{figure}[H]
   \centering
@@ -331,10 +312,9 @@ Pełny model osiąga $R^2 = 0{,}9982$.
 
 Algebraiczna tożsamość $\mathrm{score\_mean} \approx (1 - \mathrm{hall\_rate})
 \times \mathrm{nonhall\_score\_mean}$ zachodzi z~błędem poniżej $10^{-8}$.
-Rozpiętość \emph{score\_mean} wynosi 0{,}604 (od 0{,}293 do 0{,}897), podczas
-gdy rozpiętość \emph{nonhall\_score} to zaledwie 0{,}119 (od 0{,}733 do 0{,}852)
---- pięciokrotnie mniejsza. Odchylenie standardowe \emph{nonhall\_score}
-(0{,}037) jest czterokrotnie mniejsze niż \emph{score\_mean} (0{,}142).
+Rozpiętość \emph{score\_mean} wynosi 0{,}604, podczas gdy rozpiętość
+\emph{nonhall\_score} to zaledwie 0{,}119 --- pięciokrotnie mniejsza
+(rysunek~\ref{fig:nonhall_spread}).
 
 \begin{figure}[H]
   \centering
@@ -345,21 +325,11 @@ gdy rozpiętość \emph{nonhall\_score} to zaledwie 0{,}119 (od 0{,}733 do 0{,}8
   \label{fig:nonhall_spread}
 \end{figure}
 
-Analiza najlepszych i~najgorszych triali potwierdza ten wniosek. Dla
-\texttt{gemma2:2b} najgorszy trial (score $= 0{,}629$, halucynacje 30\%)
-osiąga \emph{nonhall\_score} $= 0{,}899$, podczas gdy najlepszy trial
-(score $= 0{,}847$, halucynacje 5\%) --- \emph{nonhall\_score} $= 0{,}892$.
-Gorszy trial ma wyższy wynik jakościowy w~przypadkach bez halucynacji.
-Dla \texttt{gemma3:4b} różnica \emph{nonhall\_score} między najlepszym
-(score $= 0{,}897$) a~najgorszym (score $= 0{,}846$) trialem wynosi 0{,}006.
-
 Halucynacje koncentrują się w~kategoriach \texttt{missing\_data}
-(39{,}4\%, score $= 0{,}550$) i~\texttt{stale\_data} (29{,}4\%, score $= 0{,}562$).
-W~kategoriach \texttt{factual\_status} (0{,}5\%) i~\texttt{paraphrase}
-(3{,}3\%) halucynacje są marginalne. Najtrudniejsze przypadki to
-\texttt{stale\_02} (58{,}8\% halucynacji, score $= 0{,}345$),
-\texttt{missing\_02} (51{,}3\%, score $= 0{,}435$) oraz
-\texttt{missing\_01} (50{,}0\%, score $= 0{,}465$).
+(39{,}4\%) i~\texttt{stale\_data} (29{,}4\%); w~\texttt{factual\_status}
+i~\texttt{paraphrase} są marginalne (rysunek~\ref{fig:case_hall_rates}).
+Mapa korelacji hiperparametrów (rysunek~\ref{fig:hparam_heatmap}) nie wskazuje
+silnych związków z~jakością.
 
 \begin{figure}[H]
   \centering
@@ -377,18 +347,53 @@ W~kategoriach \texttt{factual\_status} (0{,}5\%) i~\texttt{paraphrase}
   \label{fig:hparam_heatmap}
 \end{figure}
 
-Kluczowy wniosek: Optuna zmienia \emph{kiedy} model halucynuje, nie
-\emph{jak dobrze} odpowiada, gdy nie halucynuje. Dalsza optymalizacja
-hiperparametrów ma marginalny wpływ na jakość. Problemem są trudne scenariusze
-(\texttt{missing\_data}, \texttt{stale\_data}), wymagające działania na poziomie
-wag modelu. Odkrycie to motywuje eksperymenty z~kwantyzacją
-(sekcja~\ref{subsec:kwantyzacja}) i~\emph{prefix caching}
-(sekcja~\ref{subsec:prefix_caching}) jako alternatywne dźwignie optymalizacji
-oraz plan fine-tuningu (sekcja~\ref{subsec:finetuning_plan}).
+Kluczowy wniosek etapu Optuny: zmiana hiperparametrów wpływa głównie na
+\emph{kiedy} model halucynuje, nie na \emph{jak dobrze} odpowiada, gdy nie
+halucynuje. Dalsza optymalizacja TPE ma marginalny wpływ na jakość semantyczną.
+Problemem są trudne scenariusze wymagające działania na poziomie wag modelu.
+To motywuje przejście do kwantyzacji i~\emph{prefix caching} jako dźwigni
+opóźnienia oraz plan fine-tuningu (sekcja~\ref{subsec:finetuning_plan}).
+
+\subsubsection{Modelowanie E2E: rozkład normalny}
+
+Dla opóźnienia E2E w~protokole Optuny (zmienny prompt, cold start) przyjęto
+model normalny. Rysunek~\ref{fig:optuna_gauss_fit} pokazuje histogramy E2E
+oraz dopasowaną gęstość~$\mathcal{N}(\hat\mu,\hat\sigma^2)$ per model.
+Lokalizację raportuje się więc jako \textbf{średnią}, a~rozrzut jako~$\sigma$
+(nie medianę empiryczną).
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\textwidth]{optuna_e2e_gauss_fit_matrix.png}
+  \caption{Dopasowanie rozkładu normalnego do opóźnienia E2E
+           (\texttt{results-selected-9.05}). Histogram oraz gęstość
+           $\mathcal{N}(\hat\mu,\hat\sigma^2)$ per model.}
+  \label{fig:optuna_gauss_fit}
+\end{figure}
+
+Kompromis Pareto (rysunek~\ref{fig:pareto_latency_hall}) zestawia średnie E2E
+($\pm\sigma$) ze wskaźnikiem halucynacji. Żaden model nie dominuje w~obu
+wymiarach jednocześnie: \texttt{gemma2:2b} jest najszybszy
+($\mathrm{E2E}\approx 20{,}5$~s), lecz ma ok.~18\%~halucynacji;
+\texttt{gemma3:4b} jest wolniejszy ($\approx 30{,}4$~s), lecz osiąga
+ok.~1{,}2\%~halucynacji. Dla asystenta informującego o~stanie domu błędna
+informacja jest groźniejsza niż kilka sekund dłuższej odpowiedzi --- stąd
+wybór \texttt{gemma3:4b} jako kandydata produkcyjnego. Rozsądny preset
+hiperparametrów wystarcza; Optuna nie wskazuje silnie dominującej konfiguracji
+jakościowej.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\textwidth]{04_latency_hallucination_pareto_selected.png}
+  \caption{Kompromis Pareto: średnie opóźnienie E2E ($\pm\sigma$, model Gaussa)
+           vs wskaźnik halucynacji (\texttt{results-selected-9.05}).
+           Rozmiar punktu odpowiada średniemu \emph{composite score}.}
+  \label{fig:pareto_latency_hall}
+\end{figure}
 
 
 % ============================================================
-\subsection{Run~3: Kwantyzacja modeli i izolacja czasu generacji}
+\subsection{Etap kwantyzacji: cold vs warm i model log-normalny}
 \label{subsec:kwantyzacja}
 % ============================================================
 
@@ -397,15 +402,14 @@ oraz plan fine-tuningu (sekcja~\ref{subsec:finetuning_plan}).
 Modele w~Ollamie przechowywane są w~formacie GGUF z~różnymi poziomami
 kwantyzacji wag. W~badaniach uwzględniono cztery warianty:
 \begin{itemize}
-  \item \textbf{Q8\_0} --- 8-bitowe wagi bez grupowania; baseline (pełna precyzja int8),
-  \item \textbf{Q4\_K\_M} --- 4-bitowe wagi z~grupowaniem K i~mixed precision M;
-        kompromis rozmiaru i~jakości,
-  \item \textbf{Q4\_0} --- 4-bitowe wagi bez grupowania; prostszy wariant,
+  \item \textbf{Q8\_0} --- 8-bitowe wagi bez grupowania; baseline,
+  \item \textbf{Q4\_K\_M} --- 4-bitowe wagi z~grupowaniem K i~mixed precision~M,
+  \item \textbf{Q4\_0} --- 4-bitowe wagi bez grupowania,
   \item \textbf{Q2\_K} --- 2-bitowe wagi z~grupowaniem; agresywna kompresja.
 \end{itemize}
-Mniejsza precyzja oznacza mniejszy plik i~mniej danych do załadowania
-z~RAM do rejestrów CPU, co teoretycznie przyspiesza dekodowanie tokenów.
-Zbyt agresywna kwantyzacja może jednak destabilizować generację.
+Mniejsza precyzja oznacza mniejszy plik i~mniej danych do przenoszenia
+z~pamięci, co teoretycznie przyspiesza dekodowanie tokenów. Zbyt agresywna
+kwantyzacja może jednak destabilizować generację.
 
 \begin{table}[H]
   \centering
@@ -422,73 +426,99 @@ Zbyt agresywna kwantyzacja może jednak destabilizować generację.
   \end{tabular}
 \end{table}
 
-\subsubsection{Problem metryki E2E: TTFT maskuje efekt kwantyzacji}
+\subsubsection{Dlaczego pierwsze pomiary ``nic nie pokazywały''}
 
-W~Run~1 i~Run~2 przy zmiennym prompcie lub zimnym cache E2E dla różnych
-wariantów kwantyzacji wyglądało podobnie, ponieważ $\mathrm{E2E} = \mathrm{TTFT}
-+ \mathrm{generation\_ms}$. TTFT (prefill) zależy od długości promptu
-i~taktowania CPU, nie od precyzji wag. Kwantyzacja wpływa wyłącznie
-na \emph{generation\_ms} --- czas dekodowania kolejnych tokenów.
+Przy zmiennym prompcie lub zimnym cache metryka E2E dla różnych wariantów
+kwantyzacji wygląda podobnie, ponieważ
+$\mathrm{E2E} = \mathrm{TTFT} + \mathrm{generation\_ms}$. TTFT (prefill)
+zależy od długości promptu i~taktowania CPU, nie od precyzji wag. Kwantyzacja
+wpływa przede wszystkim na \emph{generation\_ms}. Gdy TTFT dominuje budżet
+czasu --- typowe przy cold cache --- różnice Q4/Q8 giną w~szumie E2E.
+To wyjaśnia, dlaczego wczesne porównania ``po E2E'' nie dawały czytelnego
+efektu kwantyzacji.
 
-Przykład dla \texttt{gemma3-4b}: Q8\_0 osiąga TTFT $= 2{,}48$~s,
-\emph{generation} $= 8{,}64$~s, E2E $= 10{,}83$~s; Q4\_K\_M --- odpowiednio
-2{,}38~s, 5{,}90~s i~8{,}11~s. Różnica E2E wynosi 2{,}72~s (25\%), lecz różnica
-\emph{generation\_ms} --- 2{,}74~s (46\%). Metryka \emph{generation\_ms}
-jest właściwym miernikiem efektu kwantyzacji.
+\subsubsection{Cold vs warm: izolacja generation\_ms}
+
+Aby wyizolować czas generacji, zastosowano protokół \emph{warm-cache}:
+stały \emph{system\_prompt}, \texttt{keep\_alive=30m}, \texttt{streaming=True},
+\emph{generation\_ms} $= \mathrm{e2e\_ms} - \mathrm{ttft\_ms}$ per rekord.
+Równolegle zebrano pomiary \emph{cold-cache} ($n\approx 100$ per komórka
+model$\times$wariant). Rysunki~\ref{fig:dekompozycja_e2e}
+i~\ref{fig:cold_dekompozycja_e2e} pokazują dekompozycję E2E na TTFT i~generację
+jako mediany modelu log-normalnego~$e^{\hat\mu}$.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.85\textwidth]{03_dekompozycja_e2e.png}
-  \caption{Dekompozycja E2E na TTFT i~\emph{generation\_ms}. Kwantyzacja
-           wpływa na czas generacji, nie na prefill.}
+  \includegraphics[width=0.95\textwidth]{03_dekompozycja_e2e.png}
+  \caption{Dekompozycja E2E na TTFT i~\emph{generation\_ms} (warm cache).
+           Wysokości słupków to mediany modelu log-normalnego $e^{\hat\mu}$
+           ($n\approx 100$). Kwantyzacja wpływa głównie na czas generacji.}
   \label{fig:dekompozycja_e2e}
 \end{figure}
 
-\subsubsection{Metodologia eksperymentu warm-cache}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\textwidth]{cold_03_dekompozycja_e2e.png}
+  \caption{Dekompozycja E2E na TTFT i~\emph{generation\_ms} (cold cache).
+           Mediany modelu LN $e^{\hat\mu}$, $n\approx 100$. Prefill dominuje
+           budżet czasu.}
+  \label{fig:cold_dekompozycja_e2e}
+\end{figure}
 
-Aby wyizolować \emph{generation\_ms}, zastosowano protokół \emph{warm-cache}:
-\begin{itemize}
-  \item stały \emph{system\_prompt} dla wszystkich 20~zapytań w~kombinacji
-        model/wariant,
-  \item \texttt{keep\_alive=30m} --- model i~KV-cache pozostają w~RAM
-        między zapytaniami,
-  \item \texttt{streaming=True} --- TTFT mierzony do pierwszego niepustego tokenu,
-  \item \emph{generation\_ms} $= \mathrm{e2e\_ms} - \mathrm{ttft\_ms}$ obliczany
-        per rekord.
-\end{itemize}
-Zebrano 240~rekordów: 12~kombinacji model/wariant $\times$ 20~pytań.
-Dla \texttt{gemma3-4b} i~\texttt{bielik-4.5b} wszystkie warianty osiągnęły
-100\% hit rate cache. Anomalia \texttt{gemma4-e2b/Q2\_K} (45\% hit rate,
-55\% pustych odpowiedzi) omówiono w~podsekcji~\ref{subsubsec:anomalie}.
+\subsubsection{Model log-normalny dla czasów generacji}
 
-\subsubsection{Wyniki: przyspieszenie generation\_ms względem Q8\_0}
+Czasy generacji są dodatnie i~prawostronnie skośne (różna długość odpowiedzi).
+Przyjęto więc wspólny model roboczy log-normalny: lokalizacja
+$e^{\hat\mu}$ (mediana modelu LN), przedział $e^{\hat\mu\pm\hat\sigma}$.
+Rysunek~\ref{fig:warm_ln_fit} pokazuje histogramy \emph{generation} oraz
+dopasowaną gęstość LN dla warm cache (analogicznie cold ---
+rysunek~\ref{fig:cold_ln_fit}).
 
-Tabela~\ref{tab:kwantyzacja_wyniki} zestawia wyniki eksperymentu warm-cache.
-Przyspieszenie (\emph{speedup}) odnosi się do mediany \emph{generation\_ms}
-względem wariantu Q8\_0 tego samego modelu.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\textwidth]{warm_generation_ln_fit_matrix.png}
+  \caption{Dopasowanie rozkładu log-normalnego do \emph{generation\_ms}
+           (warm cache, $n\approx 100$). Histogram oraz gęstość LN per model
+           i~wariant kwantyzacji.}
+  \label{fig:warm_ln_fit}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\textwidth]{cold_generation_ln_fit_matrix.png}
+  \caption{Dopasowanie rozkładu log-normalnego do \emph{generation\_ms}
+           (cold cache, $n\approx 100$).}
+  \label{fig:cold_ln_fit}
+\end{figure}
+
+\subsubsection{Wyniki warm-cache}
+
+Tabela~\ref{tab:kwantyzacja_wyniki} zestawia mediany modelu LN dla TTFT,
+generacji i~E2E oraz przyspieszenie generacji względem Q8\_0
+($\mathrm{speedup}= e^{\hat\mu_{\mathrm{Q8}}}/e^{\hat\mu_{\mathrm{wariant}}}$).
 
 \begin{table}[H]
   \centering
-  \caption{Wyniki kwantyzacji warm-cache: mediany TTFT, generacji, E2E
-           i~przyspieszenie względem Q8\_0.}
+  \caption{Wyniki kwantyzacji warm-cache: mediany modelu LN ($e^{\hat\mu}$)
+           oraz przyspieszenie generacji względem Q8\_0 ($n\approx 100$).}
   \label{tab:kwantyzacja_wyniki}
   \small
   \begin{tabular}{llccccc}
     \hline
-    Model & Wariant & GGUF & TTFT med. & Gen med. & E2E med. & Speedup \\
+    Model & Wariant & GGUF & TTFT & Gen & E2E & Speedup \\
     \hline
-    \texttt{gemma3-4b}  & Q2\_K   & 1{,}61G & 2{,}74s & 30{,}77s & 33{,}44s & 0{,}28$\times$ \\
-    \texttt{gemma3-4b}  & Q4\_0   & 2{,}20G & 2{,}42s & 6{,}14s  & 8{,}46s  & 1{,}41$\times$ \\
-    \texttt{gemma3-4b}  & Q4\_K\_M& 2{,}32G & 2{,}38s & 5{,}90s  & 8{,}11s  & 1{,}46$\times$ \\
-    \texttt{gemma3-4b}  & Q8\_0   & 3{,}85G & 2{,}48s & 8{,}64s  & 10{,}83s & 1{,}00$\times$ \\
-    \texttt{gemma4-e2b} & Q2\_K   & 2{,}78G & 3{,}17s & 17{,}20s & 21{,}56s & 0{,}33$\times$ \\
-    \texttt{gemma4-e2b} & Q4\_0   & 3{,}13G & 1{,}84s & 4{,}27s  & 6{,}26s  & 1{,}33$\times$ \\
-    \texttt{gemma4-e2b} & Q4\_K\_M& 3{,}19G & 1{,}88s & 3{,}40s  & 5{,}26s  & 1{,}67$\times$ \\
-    \texttt{gemma4-e2b} & Q8\_0   & 4{,}63G & 1{,}86s & 5{,}68s  & 7{,}30s  & 1{,}00$\times$ \\
-    \texttt{bielik-4.5b}& Q2\_K   & 1{,}65G & 8{,}53s & 30{,}14s & 38{,}93s & 2{,}18$\times$ \\
-    \texttt{bielik-4.5b}& Q4\_0   & 2{,}52G & 7{,}55s & 31{,}88s & 39{,}44s & 2{,}06$\times$ \\
-    \texttt{bielik-4.5b}& Q4\_K\_M& 2{,}68G & 7{,}20s & 34{,}52s & 41{,}68s & 1{,}90$\times$ \\
-    \texttt{bielik-4.5b}& Q8\_0   & 4{,}71G & 6{,}52s & 65{,}55s & 72{,}48s & 1{,}00$\times$ \\
+    \texttt{gemma3-4b}  & Q2\_K   & 1{,}61G & 2{,}74s & 14{,}18s & 17{,}74s & 0{,}68$\times$ \\
+    \texttt{gemma3-4b}  & Q4\_0   & 2{,}20G & 2{,}52s & 5{,}44s  & 8{,}06s  & 1{,}77$\times$ \\
+    \texttt{gemma3-4b}  & Q4\_K\_M& 2{,}32G & 2{,}44s & 6{,}42s  & 9{,}02s  & 1{,}50$\times$ \\
+    \texttt{gemma3-4b}  & Q8\_0   & 3{,}85G & 2{,}51s & 9{,}66s  & 12{,}30s & 1{,}00$\times$ \\
+    \texttt{gemma4-e2b} & Q2\_K   & 2{,}78G & 3{,}08s & 10{,}79s & 16{,}44s & 0{,}57$\times$ \\
+    \texttt{gemma4-e2b} & Q4\_0   & 3{,}13G & 1{,}93s & 4{,}67s  & 6{,}80s  & 1{,}33$\times$ \\
+    \texttt{gemma4-e2b} & Q4\_K\_M& 3{,}19G & 1{,}83s & 4{,}29s  & 6{,}30s  & 1{,}45$\times$ \\
+    \texttt{gemma4-e2b} & Q8\_0   & 4{,}63G & 1{,}88s & 6{,}20s  & 8{,}22s  & 1{,}00$\times$ \\
+    \texttt{bielik-4.5b}& Q2\_K   & 1{,}65G & 8{,}58s & 28{,}51s & 39{,}19s & 2{,}32$\times$ \\
+    \texttt{bielik-4.5b}& Q4\_0   & 2{,}52G & 7{,}59s & 34{,}00s & 41{,}64s & 1{,}95$\times$ \\
+    \texttt{bielik-4.5b}& Q4\_K\_M& 2{,}68G & 7{,}06s & 34{,}36s & 41{,}67s & 1{,}93$\times$ \\
+    \texttt{bielik-4.5b}& Q8\_0   & 4{,}71G & 6{,}54s & 66{,}22s & 72{,}78s & 1{,}00$\times$ \\
     \hline
   \end{tabular}
 \end{table}
@@ -496,127 +526,116 @@ względem wariantu Q8\_0 tego samego modelu.
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.85\textwidth]{04_przyspieszenie_wzgledem_q8.png}
-  \caption{Przyspieszenie \emph{generation\_ms} względem Q8\_0
-           w~eksperymencie warm-cache.}
+  \caption{Przyspieszenie \emph{generation\_ms} względem Q8\_0 (warm cache).
+           Speedup $= e^{\hat\mu_{\mathrm{Q8}}}/e^{\hat\mu_{\mathrm{wariant}}}$.}
   \label{fig:speedup_q8}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.85\textwidth]{07_mediana_generacji_ms_wedlug_wariantu.png}
-  \caption{Mediana \emph{generation\_ms} według wariantu kwantyzacji.}
+  \includegraphics[width=0.85\textwidth]{07_generation_ms_wedlug_wariantu.png}
+  \caption{Czas \emph{generation\_ms} według wariantu kwantyzacji
+           (mediana modelu LN $e^{\hat\mu}$, przedział $e^{\hat\mu\pm\hat\sigma}$;
+           warm cache, $n\approx 100$).}
   \label{fig:gen_ms_variant}
 \end{figure}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.85\textwidth]{08_szybkosc_generacji_tok_s_wedlug_wariantu.png}
-  \caption{Szybkość generacji [tok/s] według wariantu kwantyzacji.}
+  \caption{Szybkość generacji [znaki/s] (proxy tok/s) według wariantu
+           kwantyzacji. Mediana modelu LN na per-rekord
+           $\mathrm{answer\_chars}/(\mathrm{generation\_ms}/1000)$.}
   \label{fig:tok_s_variant}
 \end{figure}
 
 \subsubsection{Anomalie i wnioski}
 \label{subsubsec:anomalie}
 
-\textbf{Anomalia Q2\_K.} Wariant \texttt{gemma3-4b/Q2\_K} osiąga
-\emph{generation\_ms} $= 30{,}77$~s mimo najmniejszego pliku GGUF (1{,}61~GB).
-Przyczyną jest cztero- do pięciokrotnie dłuższa odpowiedź: mediana długości
-wynosi 269{,}5~znaków (Q2\_K) vs 57{,}5~znaków (Q4\_K\_M). Przy niskiej
-precyzji wag model generuje rozwlekłe odpowiedzi zamiast zwięzłych stwierdzeń.
+\textbf{Anomalia Q2\_K.} Wariant \texttt{gemma3-4b/Q2\_K} ma długi czas
+generacji mimo małego pliku GGUF: przy niskiej precyzji wag model produkuje
+rozwlekłe odpowiedzi (rysunek~\ref{fig:gen_vs_length}).
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.85\textwidth]{05_generacja_a_dlugosc_odpowiedzi.png}
   \caption{Zależność czasu generacji od długości odpowiedzi
-           (anomalia Q2\_K).}
+           (anomalia Q2\_K; warm cache).}
   \label{fig:gen_vs_length}
 \end{figure}
 
-\textbf{Anomalia \texttt{gemma4-e2b/Q2\_K}.} Model MoE \texttt{gemma4-e2b}
-jest szczególnie wrażliwy na agresywną kwantyzację 2-bitową: 55\% pustych
-odpowiedzi i~45\% hit rate cache (vs 100\% dla pozostałych wariantów).
-Eksperyment ten przeprowadzono dodatkowo poza głównym benchmarkiem Optuny;
-model \texttt{gemma4-e2b} nie wchodzi do tabeli~\ref{tab:modele_kandydaci}.
+\textbf{Anomalia \texttt{gemma4-e2b/Q2\_K}.} Model MoE jest wrażliwy na
+kwantyzację 2-bitową (część pustych odpowiedzi / niższy hit rate cache).
 
-\textbf{Odrzucenie Bielika.} Nawet przy Q4\_K\_M mediana \emph{generation\_ms}
-wynosi 34{,}52~s (E2E $= 41{,}68$~s), co daje $5{,}8\times$ wolniejszą generację
-niż \texttt{gemma3-4b/Q4\_K\_M} (5{,}90~s). Model polski nie jest wariantem
-produkcyjnym dla asystenta głosowego w~analizowanym środowisku.
+\textbf{Odrzucenie Bielika.} Nawet przy Q4\_K\_M mediana LN generacji wynosi
+ok.~34~s --- rzędu $5\times$ wolniej niż \texttt{gemma3-4b/Q4\_K\_M}. Model
+nie jest wariantem produkcyjnym dla asystenta głosowego w~tym środowisku.
 
-\textbf{Wniosek.} Q4\_K\_M to optymalny wariant dla modeli Gemma:
-\texttt{gemma3-4b} osiąga $1{,}46\times$ przyspieszenie względem Q8\_0
-przy 40\% mniejszym pliku; \texttt{gemma4-e2b} --- $1{,}67\times$.
-Kwantyzacja nie redukuje wskaźnika halucynacji --- halucynacje są własnością
-wag modelu, nie precyzji reprezentacji. Q4\_K\_M zapewnia przyspieszenie
-bez degradacji jakości semantycznej, co uzasadnia dalszą optymalizację TTFT
-przez \emph{prefix caching} (sekcja~\ref{subsec:prefix_caching}).
+\textbf{Wniosek.} Q4\_K\_M to sensowny kompromis dla Gemm: dla
+\texttt{gemma3-4b} ok.~$1{,}50\times$ przyspieszenie generacji względem Q8\_0
+przy mniejszym pliku; dla \texttt{gemma4-e2b} ok.~$1{,}45\times$. Kwantyzacja
+nie redukuje halucynacji --- to własność wag, nie precyzji reprezentacji.
+Dalsza dźwignia opóźnienia to redukcja TTFT przez układanie promptu pod
+\emph{prefix caching} (sekcja~\ref{subsec:prefix_caching}).
 
 
 % ============================================================
-\subsection{Prefix caching jako metoda redukcji TTFT}
+\subsection{Prompt engineering i prefix caching}
 \label{subsec:prefix_caching}
 % ============================================================
 
-\subsubsection{Problem: TTFT jako bottleneck przy długim prompcie}
+\subsubsection{Problem: TTFT przy długim prompcie}
 
-W~systemie Wilga \emph{system\_prompt} zawiera statyczny nagłówek
-(reguły, instrukcje; ok.~200--300~tokenów), blok sensoryczny (ok.~35~kolumn
-generowanych per-snapshot) oraz kontekst nauczyciela (2--3~zdania z~insight;
-ok.~100~tokenów). Łącznie prompt systemowy ma ok.~500--800~tokenów.
+W~systemie Wilga \emph{system\_prompt} zawiera statyczny nagłówek (reguły,
+instrukcje), blok sensoryczny oraz kontekst nauczyciela. Przy każdym zapytaniu
+z~nowym kontekstem sensorycznym urządzenie musi wykonać prefill od zera.
+W~protokole cold cache TTFT stanowi większość E2E; w~warm cache --- przy
+stałym prefiksie --- TTFT spada o~rząd wielkości.
 
-Przy każdym zapytaniu z~nowym kontekstem sensorycznym Raspberry~Pi musi
-wykonać prefill od zera. Dla \texttt{gemma3:4b} w~Run~3 mediana TTFT wynosi
-27\,387~ms przy medianie E2E $= 31\,407$~ms --- TTFT stanowi ok.~87\% E2E
-przy zimnym cache. Prefill dominuje całkowite opóźnienie odpowiedzi.
+\subsubsection{Mechanizm prefix cachingu}
 
-\subsubsection{Mechanizm prefix cachingu w Ollamie / llama.cpp}
+Podczas prefill model oblicza klucze~(K) i~wartości~(V). KV-cache może zostać
+zachowane, jeśli tokeny od początku promptu są identyczne. Implikacja dla
+architektury Teacher-Student (rozdział~3): statyczny blok musi być prefiksem,
+a~zmienny (sensory, insight, pytanie) --- sufiksem.
 
-Podczas prefill modele językowe obliczają klucze (K) i~wartości (V) dla
-każdego tokenu promptu. Wektory KV-cache mogą być zachowane w~pamięci,
-jeśli prefix promptu jest identyczny między kolejnymi zapytaniami.
+\subsubsection{Empirycznie: cold vs warm TTFT}
 
-Warunek trafienia cache: identyczne tokeny od początku promptu. Implikacja
-projektowa dla architektury Teacher-Student (rozdział~3): statyczny blok
-(instrukcje, reguły) musi być prefiksem, a~zmienny blok (dane sensoryczne,
-kontekst nauczyciela, pytanie użytkownika) --- sufiksem. Jeśli statyczny
-prefiks stanowi ok.~70\% promptu, ok.~70\% pracy prefill jest pomijane
-przy trafieniu cache.
-
-\subsubsection{Empiryczna weryfikacja: TTFT przy warm cache}
-
-Dane z~eksperymentu warm-cache (tabela~\ref{tab:kwantyzacja_wyniki}) potwierdzają
-redukcję TTFT przy stałym prompcie: \texttt{gemma3-4b/Q4\_K\_M} osiąga mediana
-TTFT $= 2378$~ms (warm cache), podczas gdy Run~3 ze zmiennym promptem daje
-27\,387~ms (cold cache). Redukcja wynosi $(27\,387 - 2378) / 27\,387
-= 91{,}3\%$.
-
-% BRAKUJE: bezpośredni eksperyment cold vs warm dla identycznego promptu.
-Porównanie dotyczy różnych protokołów (zmienny vs stały prompt), dlatego
-należy je traktować jako obserwację porównawczą z~zastrzeżeniem metodologicznym.
-Ostrożne oszacowanie redukcji TTFT w~warunkach produkcyjnych z~dłuższym
-promptem wynosi ok.~84\%.
+Dla \texttt{gemma3-4b/Q4\_K\_M} mediana modelu LN TTFT wynosi ok.~31{,}3~s
+w~cold cache oraz ok.~2{,}44~s w~warm cache
+(rysunki~\ref{fig:cold_ttft},~\ref{fig:ttft_warm}). Redukcja
+$(31{,}3 - 2{,}44)/31{,}3 \approx 92\%$. Porównanie dotyczy protokołów
+cold vs warm przy tej samej siatce model$\times$wariant ($n\approx 100$).
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.85\textwidth]{02_mediana_ttft_wedlug_wariantu.png}
-  \caption{Mediana TTFT według wariantu kwantyzacji (warm cache).}
+  \includegraphics[width=0.85\textwidth]{cold_02_ttft_wedlug_wariantu.png}
+  \caption{TTFT według wariantu kwantyzacji (cold cache):
+           mediana modelu LN $e^{\hat\mu}$ z~przedziałem $e^{\hat\mu\pm\hat\sigma}$.}
+  \label{fig:cold_ttft}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\textwidth]{02_ttft_wedlug_wariantu.png}
+  \caption{TTFT według wariantu kwantyzacji (warm cache):
+           mediana modelu LN $e^{\hat\mu}$ z~przedziałem $e^{\hat\mu\pm\hat\sigma}$.}
   \label{fig:ttft_warm}
 \end{figure}
 
-\subsubsection{Konsekwencje dla projektu systemu promptu Wilga}
+\subsubsection{Konsekwencje dla promptu Wilga}
 
-Architektura promptu zoptymalizowana pod \emph{prefix caching}:
+Architektura promptu pod \emph{prefix caching}:
 \begin{itemize}
-  \item \textbf{[STATYCZNY PREFIKS --- cache hit]:} instrukcje asystenta,
-        reguły zachowania (brak danych $\rightarrow$ przyznaj wprost),
-        format odpowiedzi,
-  \item \textbf{[DYNAMICZNY SUFIKS --- zmienia się per snapshot]:} dane
-        sensoryczne, kontekst nauczyciela (\emph{EnergyInsight},
-        \emph{ComfortInsight}), pytanie użytkownika.
+  \item \textbf{[STATYCZNY PREFIKS]:} instrukcje, reguły (brak danych
+        $\rightarrow$ przyznaj wprost), format odpowiedzi,
+  \item \textbf{[DYNAMICZNY SUFIKS]:} dane sensoryczne, kontekst nauczyciela,
+        pytanie użytkownika.
 \end{itemize}
-Po wdrożeniu \emph{prefix caching} i~kwantyzacji Q4\_K\_M:
-TTFT $\approx 2{,}4$~s (zamiast ok.~27~s), \emph{generation\_ms} $\approx 5{,}9$~s,
-E2E $\approx 8{,}3$~s --- akceptowalne dla asystenta głosowego.
+Po wdrożeniu \emph{prefix caching} i~kwantyzacji Q4\_K\_M dla
+\texttt{gemma3-4b}: TTFT $\approx 2{,}4$~s, generacja $\approx 6{,}4$~s,
+E2E $\approx 9$~s (mediany modelu LN, warm) --- akceptowalne dla asystenta
+głosowego względem cold E2E rzędu kilkudziesięciu sekund.
 
 
 % ============================================================
@@ -626,69 +645,46 @@ E2E $\approx 8{,}3$~s --- akceptowalne dla asystenta głosowego.
 
 \subsubsection{Porównanie modeli: wyniki końcowe}
 
-Tabela~\ref{tab:wyniki_finalne} zestawia wyniki końcowe Run~3
-(\texttt{results-selected-9.05}) z~95\%-owymi przedziałami ufności
-(bootstrap, 10\,000 prób).
+Tabela~\ref{tab:wyniki_finalne} zestawia wyniki Optuny
+(\texttt{results-selected-9.05}) z~95\%-owymi przedziałami ufności score
+i~halucynacji (bootstrap) oraz średnim E2E~$\pm\sigma$ (model Gaussa).
 
 \begin{table}[H]
   \centering
-  \caption{Wyniki końcowe modeli z~przedziałami ufności 95\%
-           (\texttt{results-selected-9.05}).}
+  \caption{Wyniki końcowe modeli z~przedziałami ufności 95\% (score, hal.)
+           oraz średnim E2E~$\pm\sigma$ (\texttt{results-selected-9.05}).}
   \label{tab:wyniki_finalne}
   \small
   \begin{tabular}{lccccc}
     \hline
-    Model & Score & 95\% CI score & Hal. & 95\% CI hal. & E2E med. \\
+    Model & Score & 95\% CI score & Hal. & 95\% CI hal. & E2E średnia~$\pm\sigma$ \\
     \hline
-    \texttt{gemma3:4b}  & 0{,}884 & [0{,}872, 0{,}894] & 1{,}17\% & [0{,}50\%, 2{,}17\%] & 31{,}4s \\
-    \texttt{llama3.2:3b}& 0{,}732 & [0{,}683, 0{,}780] & 16{,}5\% & [11{,}5\%, 22{,}0\%] & 27{,}6s \\
-    \texttt{gemma2:2b}  & 0{,}732 & [0{,}702, 0{,}760] & 18{,}3\% & [15{,}3\%, 21{,}5\%] & 20{,}9s \\
-    \texttt{qwen2.5:3b} & 0{,}697 & [0{,}645, 0{,}746] & 20{,}5\% & [15{,}0\%, 26{,}0\%] & 30{,}2s \\
+    \texttt{gemma3:4b}  & 0{,}884 & [0{,}872, 0{,}894] & 1{,}17\% & [0{,}50\%, 2{,}17\%] & $30{,}4\pm 7{,}6$~s \\
+    \texttt{llama3.2:3b}& 0{,}732 & [0{,}683, 0{,}780] & 16{,}5\% & [11{,}5\%, 22{,}0\%] & $26{,}8\pm 6{,}3$~s \\
+    \texttt{gemma2:2b}  & 0{,}732 & [0{,}702, 0{,}760] & 18{,}3\% & [15{,}3\%, 21{,}5\%] & $20{,}5\pm 5{,}2$~s \\
+    \texttt{qwen2.5:3b} & 0{,}697 & [0{,}645, 0{,}746] & 20{,}5\% & [15{,}0\%, 26{,}0\%] & $29{,}4\pm 6{,}6$~s \\
     \hline
   \end{tabular}
 \end{table}
 
-\texttt{gemma3:4b} dominuje: score o~0{,}15 wyższy niż drugi model, przy
-14-krotnie niższym wskaźniku halucynacji (1{,}17\% vs 16{,}5\%).
-Przedziały ufności nie zachodzą na siebie --- różnica jest istotna statystycznie.
-
-\subsubsection{Kompromis Pareto: opóźnienie vs halucynacje}
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.85\textwidth]{04_latency_hallucination_pareto_selected.png}
-  \caption{Kompromis Pareto: mediana E2E vs wskaźnik halucynacji
-           (\texttt{results-selected-9.05}).}
-  \label{fig:pareto_latency_hall}
-\end{figure}
-
-Wykres Pareto (rysunek~\ref{fig:pareto_latency_hall}) pokazuje, że żaden model
-nie dominuje jednocześnie w~obu wymiarach: \texttt{gemma2:2b} jest najszybszy
-(E2E $= 20{,}9$~s), lecz ma 18{,}3\% halucynacji; \texttt{gemma3:4b} jest
-najwolniejszy z~kandydatów (31{,}4~s), lecz osiąga 1{,}17\% halucynacji.
-
-Reguła decyzyjna dla asystenta informującego o~stanie domu: błędna informacja
-(halucynacja) jest groźniejsza niż 10~s dłuższy czas odpowiedzi.
-\texttt{gemma3:4b} + Q4\_K\_M stanowi rekomendowaną konfigurację produkcyjną.
-\texttt{gemma2:2b} pozostaje alternatywą dla zadań konwersacyjnych
-(nie-informatycznych), gdzie szybkość przeważa nad precyzją.
+\texttt{gemma3:4b} dominuje jakościowo: score o~ok.~0{,}15 wyższy niż drugi
+model, przy ok.~14-krotnie niższym wskaźniku halucynacji. Przedziały ufności
+score nie zachodzą na siebie.
 
 \subsubsection{Rekomendowana konfiguracja}
 
-Rekomendowana konfiguracja produkcyjna:
 \begin{itemize}
   \item \textbf{Model:} \texttt{gemma3:4b},
-  \item \textbf{Kwantyzacja:} Q4\_K\_M ($1{,}46\times$ szybsza generacja vs Q8\_0,
-        plik GGUF 2{,}32~GB vs 3{,}85~GB),
-  \item \textbf{Hiperparametry:} dowolny rozsądny preset (Optuna nie różnicuje
+  \item \textbf{Kwantyzacja:} Q4\_K\_M (ok.~$1{,}50\times$ szybsza generacja
+        vs Q8\_0 przy warm cache; mniejszy plik GGUF),
+  \item \textbf{Hiperparametry:} rozsądny preset (Optuna nie różnicuje silnie
         jakości semantycznej),
-  \item \textbf{Prompt:} statyczny prefiks dla \emph{prefix caching},
-  \item \textbf{TTFT produkcyjny:} ok.~2{,}4~s (warm cache),
-  \item \textbf{Generacja:} ok.~5{,}9~s (Q4\_K\_M),
-  \item \textbf{E2E produkcyjny:} ok.~8{,}3~s.
+  \item \textbf{Prompt:} statyczny prefiks pod \emph{prefix caching},
+  \item \textbf{Budżet czasu (warm, LN):} TTFT $\approx 2{,}4$~s, generacja
+        $\approx 6{,}4$~s, E2E $\approx 9$~s.
 \end{itemize}
-Ograniczenie: halucynacje w~\texttt{missing\_data} (39{,}4\%) i~\texttt{stale\_data}
-(29{,}4\%) nie są rozwiązane przez żaden z~badanych mechanizmów i~wymagają
+Ograniczenie: halucynacje w~\texttt{missing\_data} i~\texttt{stale\_data}
+nie są rozwiązane przez Optunę, kwantyzację ani cache --- wymagają
 fine-tuningu (sekcja~\ref{subsec:finetuning_plan}).
 
 
@@ -697,11 +693,12 @@ fine-tuningu (sekcja~\ref{subsec:finetuning_plan}).
 \label{subsec:finetuning_plan}
 % ============================================================
 
-Analiza Run~3 wykazała, że halucynacje w~kategoriach \texttt{missing\_data}
+Analiza Optuny wykazała, że halucynacje w~kategoriach \texttt{missing\_data}
 i~\texttt{stale\_data} są własnością wag modelu, a~nie konfiguracji inferencji.
-Żaden z~badanych mechanizmów ich nie redukuje: Optuna wyjaśnia 30\% wariancji
-score bez zmiany \emph{nonhall\_score}; kwantyzacja zmienia prędkość generacji,
-nie semantykę; \emph{prefix caching} skraca TTFT, nie zachowanie modelu.
+Żaden z~badanych mechanizmów ich nie redukuje: Optuna wyjaśnia wariancję score
+głównie flagą halucynacji bez zmiany \emph{nonhall\_score}; kwantyzacja zmienia
+prędkość generacji, nie semantykę; \emph{prefix caching} skraca TTFT, nie
+zachowanie modelu.
 
 Jedyną metodą redukcji halucynacji w~tych kategoriach jest modyfikacja wag
 przez fine-tuning na przykładach docelowego zachowania. Planowany eksperyment:
@@ -716,9 +713,9 @@ przez fine-tuning na przykładach docelowego zachowania. Planowany eksperyment:
 
 Pytanie badawcze: czy fine-tuned model \emph{bez} explicit reguł w~system prompcie
 wyprzedza model bazowy \emph{z} regułami na kategoriach \texttt{missing\_data}
-i~\texttt{stale\_data}? Stabilność \emph{nonhall\_score} (delta 0{,}006 między
-trials) sugeruje, że instrukcje promptowe mają marginalny wpływ na trudne
-scenariusze --- fine-tuning adresuje ten deficyt bezpośrednio.
+i~\texttt{stale\_data}? Stabilność \emph{nonhall\_score} sugeruje, że instrukcje
+promptowe mają marginalny wpływ na trudne scenariusze --- fine-tuning adresuje
+ten deficyt bezpośrednio.
 
 Status: planowane --- wyniki poza zakresem czasowym niniejszej pracy.
 Wnioski z~obecnych badań stanowią empiryczne uzasadnienie dla tego etapu.

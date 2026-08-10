@@ -1,0 +1,77 @@
+% Propozycje podpisów do rozdz. 5 — NIE includowane w main.tex.
+% Po akceptacji review: podmienić \caption w tex/5-badania.tex.
+
+% --- Optuna / jakość (bez zmian modelu) ---
+% fig:score_vs_hall
+\caption{Zależność \emph{composite score} od wskaźnika halucynacji
+         (\texttt{results-selected-9.05}). Flaga halucynacji determinuje
+         score w~ponad 99\% przypadków.}
+
+% fig:regression_r2
+\caption{Porównanie $R^2$ modeli regresji wyjaśniających wariancję score
+         (\texttt{results-selected-9.05}).}
+
+% fig:nonhall_spread
+\caption{Rozpiętość \emph{nonhall\_score} w~porównaniu z~\emph{composite score}
+         (\texttt{results-selected-9.05}). Hiperparametry nie różnicują
+         jakości odpowiedzi bez halucynacji.}
+
+% fig:case_hall_rates
+\caption{Wskaźnik halucynacji per przypadek testowy
+         (\texttt{results-selected-9.05}).}
+
+% fig:hparam_heatmap
+\caption{Mapa korelacji hiperparametrów z~metrykami wynikowymi
+         (\texttt{results-selected-9.05}). Brak silnych korelacji z~jakością.}
+
+% fig:pareto_latency_hall  — Gauss mean±σ (nie mediana)
+\caption{Kompromis Pareto: średnie opóźnienie E2E ($\pm\sigma$, model Gaussa)
+         vs wskaźnik halucynacji (\texttt{results-selected-9.05}).
+         Rozmiar punktu odpowiada średniemu \emph{composite score}.}
+
+% fit: optuna_e2e_gauss_fit_matrix
+\caption{Dopasowanie rozkładu normalnego do opóźnienia E2E
+         (\texttt{results-selected-9.05}). Histogram oraz gęstość
+         $\mathcal{N}(\hat\mu,\hat\sigma^2)$ per model.}
+
+% fit: warm/cold generation LN
+\caption{Dopasowanie rozkładu log-normalnego do \emph{generation\_ms}
+         (warm/cold cache, $n\approx 100$). Histogram oraz gęstość LN
+         per model i wariant kwantyzacji.}
+
+% --- Warm kwantyzacja (log-normal) ---
+% fig:dekompozycja_e2e
+\caption{Dekompozycja E2E na TTFT i~\emph{generation\_ms}.
+         Wysokości słupków to mediany modelu log-normalnego $e^{\hat\mu}$
+         (warm cache, $n\approx 100$). Kwantyzacja wpływa na czas generacji,
+         nie na prefill.}
+
+% fig:speedup_q8
+\caption{Przyspieszenie \emph{generation\_ms} względem Q8\_0
+         w~eksperymencie warm-cache.
+         Speedup $= e^{\hat\mu_{\mathrm{Q8}}}/e^{\hat\mu_{\mathrm{wariant}}}$
+         (stosunek median modelu LN).}
+
+% fig:gen_ms_variant
+\caption{Czas \emph{generation\_ms} według wariantu kwantyzacji
+         (mediana modelu LN $e^{\hat\mu}$, przedział $e^{\hat\mu\pm\hat\sigma}$;
+         warm cache, $n\approx 100$).}
+
+% fig:tok_s_variant
+\caption{Szybkość generacji [znaki/s] (proxy tok/s) według wariantu kwantyzacji.
+         Mediana modelu LN na per-rekord $\mathrm{answer\_chars}/(\mathrm{generation\_ms}/1000)$.}
+
+% fig:gen_vs_length
+\caption{Zależność czasu generacji od długości odpowiedzi
+         (anomalia Q2\_K; warm cache, $n\approx 100$).}
+
+% fig:ttft_warm
+\caption{TTFT według wariantu kwantyzacji (warm cache):
+         mediana modelu LN $e^{\hat\mu}$ z~przedziałem $e^{\hat\mu\pm\hat\sigma}$.}
+
+% --- Cold (jeszcze nie w TeXu; do wstawienia później) ---
+% cold_03_dekompozycja_e2e
+\caption{Dekompozycja E2E na TTFT i~\emph{generation\_ms} (cold cache).
+         Mediany modelu LN $e^{\hat\mu}$, $n\approx 100$.}
+
+% cold_02_ttft / cold_07_generation / cold_04_speedup — analogicznie jak warm.
