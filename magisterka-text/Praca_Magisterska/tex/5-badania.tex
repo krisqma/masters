@@ -7,16 +7,21 @@
 \section{Część badawcza: analiza porównawcza i optymalizacja SLM na urządzeniu brzegowym}
 \label{sec:modele}
 
-Niniejszy rozdział dokumentuje sekwencję etapów badawczych, z~których każdy
-zmieniał kierunek kolejnych eksperymentów. Najpierw ustalono warunki wiarygodnego
-pomiaru na Raspberry~Pi~5 (chłodzenie aktywne) i~przeszukano hiperparametry
-inferencji biblioteką Optuna: okazało się, że o~wyniku decyduje flaga
-halucynacji, a~nie tuning parametrów. Następnie zbadano kwantyzację GGUF;
-przy zimnym cache efekt na E2E był zamaskowany przez TTFT, co doprowadziło
-do rozdzielenia protokołów \emph{cold} i~\emph{warm cache} oraz do modelowania
-czasów generacji rozkładem log-normalnym. Na końcu przełożono te wnioski na
-układanie promptu pod \emph{prefix caching}. Każdy etap prowadzi do kolejnego,
-bardziej ukierunkowanego eksperymentu.
+Część badawcza stanowi zasadniczy punkt niniejszej pracy magisterskiej.
+Jej celem było empiryczne sprawdzenie, na ile mały model językowy może
+działać użytecznie na urządzeniu brzegowym o~bardzo ograniczonych zasobach.
+Raspberry~Pi~5 z~8~GB pamięci RAM, bez dedykowanego GPU, wymusza kompromisy
+między jakością odpowiedzi, opóźnieniem oraz stabilnością inferencji; bez
+systematycznych pomiarów trudno byłoby uzasadnić wybór modelu, kwantyzacji
+czy konfiguracji generacji w~takim środowisku.
+
+W~rozdziale zbadano m.in.\ wpływ hiperparametrów Ollamy, wariantów kwantyzacji
+GGUF oraz warunków pomiaru (w~tym stanów \emph{cold} i~\emph{warm cache})
+na metryki jakościowe i~wydajnościowe lokalnego SLM. Choć eksperymenty
+przeprowadzono w~kontekście asystenta głosowego systemu Wilga~MiLL, uzyskane
+wnioski mają charakter ogólniejszy: dotyczą uruchamiania małych modeli
+językowych na typowym sprzęcie IoT i~mogą być wykorzystane także w~innych
+aplikacjach brzegowych o~podobnych ograniczeniach pamięci i~mocy obliczeniowej.
 
 % ============================================================
 \subsection{Architektura i metodologia systemu benchmarkowego}
@@ -25,33 +30,41 @@ bardziej ukierunkowanego eksperymentu.
 
 \subsubsection{Komponenty systemu testowego}
 
-Benchmark nie odpala pełnego produkcyjnego pipeline'u aplikacji Wilga, lecz
-testuje modele SLM na kontrolowanych parach \emph{kontekst + pytanie}, zbudowanych
-offline z~realnych danych sensorowych. Architektura systemu pomiarowego składa
-się z~dwóch współpracujących bloków: serwera orkiestrującego (MacBook~M4) oraz
-platformy inferencji (Raspberry~Pi~5), przedstawionych na
+Założeniem dla budowy systemu testowego nie było uruchamianie pełnego produkcyjnego pipeline'u aplikacji Wilga, lecz
+stworzenie wycinka systemy, który pozwoli poddać testom modele SLM na urządzeniu brzegowym. Architektura systemu pomiarowego składa
+się z~dwóch bloków: serwera orkiestrującego (MacBook) oraz
+platformy brzegowej (Raspberry~Pi~5), przedstawionych na
 rysunku~\ref{fig:testy_arch}.
 
-Po stronie serwera skrypt \texttt{tester.py} pełni rolę orchestratora. Dla
-każdego przypadku testowego buduje \emph{system\_prompt} z~wiersza CSV,
+Po stronie serwera pracuje skrypt \texttt{tester.py}, który pełni rolę orchestratora. Dla
+każdego przypadku z~\texttt{golden.jsonl} pobiera \emph{system\_prompt},
 łączy go z~pytaniem użytkownika i~wysyła żądanie HTTP do Ollamy uruchomionej
-na Raspberry~Pi (port~11434). Po stronie serwera mierzone są TTFT oraz E2E
-(timestampy przy \texttt{streaming=True}). Po otrzymaniu odpowiedzi modelu
-orkiestrator przekazuje ją do modelu ewaluacyjnego skonfigurowanego w~zmiennej
-\texttt{HAIKU\_MODEL} przez OpenRouter, który zwraca pięć metryk jakościowych.
+na Raspberry~Pi. Po stronie serwera mierzone są parametry czasowe: TTFT(time to first token) oraz E2E(end to end). Po otrzymaniu odpowiedzi modelu
+orkiestrator przekazuje ją do modelu zewnętrznego oceniającego jakość odpowiedzi. Ponownie korzystając z OpenRouter podłączono się do modelu Claude, tym razem był to Haiku 3.5. Zastosowano mniejszy, tańszy model, gdyż benchmark wymagał wysyłania wielu żądań, a koszty największych modeli są wygórowane. Haiku zwracał pięć metryk jakościowych, opisanych w~tabeli~\ref{tab:haiku_metryki}.
 
-Na Raspberry~Pi~5 równolegle działa mikroserwer \texttt{metrics\_server.py}
-(port~9000), oparty na \texttt{psutil} i~\texttt{vcgencmd}. Odpowiada na
-żądanie \texttt{GET /metrics}, zwracając temperaturę CPU (\texttt{cpu\_temp\_c}),
-zużycie RAM (\texttt{ram\_mb}) oraz flagę dławienia (\texttt{throttling\_flag}).
+Prompt przekazywany do Haiku składał się z~czterech elementów wejściowych:
+\begin{equation}
+  \label{eq:haiku_prompt}
+  \mathrm{prompt}_{\mathrm{Haiku}}
+  =
+  \{\mathrm{system\_prompt}\}
+  +
+  \{\mathrm{question}\}
+  +
+  \{\mathrm{golden\_answer}\}
+  +
+  \{\mathrm{model\_answer}\},
+\end{equation}
+\noindent
+gdzie \emph{system\_prompt} to kontekst stanu domu zbudowany wcześniej
+z rzeczywistych wierszy danych sensorowych, \emph{question} to pytanie użytkownika, \emph{golden\_answer}
+odpowiedź wzorcowa, natomiast \emph{model\_answer} to odpowiedź badanego SLM.
+W~prompcie wskazano ponadto, że kontekst sensorowy jest jedynym źródłem
+prawdy, a~wynik musi zostać zwrócić jako JSON z~pięcioma metrykami. Flaga halucynacji miała być ustawiana tylko wtedy, gdy model
+podaje konkretne fakty spoza kontekstu. Temperaturę ewaluacji ustawiono
+na zero, żeby oceny były możliwie powtarzalne. Otrzymana odpowiedź była przetwarzna oraz odrzucana jeśli format nie odpowiadał żądanemu JSON. Wymuszenie pozostaje jednak miękkie, w przypadku dalszej ewaluacji testów za istotne uznano zastosowanie mechanizmów takich jak \href{https://ai.pydantic.dev/output/}{Pydantic AI} czy \href{https://docs.langchain.com/oss/python/langchain/structured-output}{LangChain} pozwalających deterministycznie definiować format odpowiedzi modeli językowych.
 
-Istotne zastrzeżenie metodologiczne: podczas inferencji Raspberry~Pi obsługuje
-wyłącznie Ollamę i~mikroserwer metryk. Ewaluacja LLM-judge uruchamiana jest
-na serwerze \emph{po} zakończeniu żądania inferencji, dzięki czemu mierzone
-metryki wydajnościowe odpowiadają warunkom produkcyjnym urządzenia brzegowego.
-
-Złoty zbiór testowy (\emph{golden dataset}) wygenerowano jednorazowo przez
-Claude Sonnet~4.6 (\texttt{anthropic/claude-sonnet-4-6}) przez OpenRouter.
+Na urządzeniu brzegowym Raspberry Pi 5 działa serwer Ollamy, który dzięki funkcji API pozwala na łatwe odpytywanie wielu modeli zainstalowanych na urządzeniu. Eównolegle działał również mikroserwer \texttt{metrics\_server.py}, jego wprowadzenie było konieczne aby mierzyć temperaturę CPU, zużycie RAM oraz flagę dławienia (throttling flag, przegrzanie procesora).
 
 \begin{figure}[H]
   \centering
@@ -62,12 +75,15 @@ Claude Sonnet~4.6 (\texttt{anthropic/claude-sonnet-4-6}) przez OpenRouter.
   \label{fig:testy_arch}
 \end{figure}
 
-\subsubsection{Złoty zbiór testowy (\emph{golden dataset})}
+\subsubsection{Zbiór danych testowych}
 
-Benchmark obejmuje 20~przypadków testowych w~formacie
-\{\emph{system\_prompt}, \emph{question}, \emph{golden\_answer}\}, wygenerowanych
-na podstawie realnych danych z~pliku CSV sensorów systemu Wilga. Kategorie
-przypadków przedstawiono w~tabeli~\ref{tab:golden_kategorie}.
+
+Pracę nad częścią badawczą rozpoczęto od zbiory zawierającego pytania oraz modelowe odpowiedzi. Jest nim plik \texttt{golden.jsonl}: stały zbiór 20~przypadków testowych. Każdy rekord zawiera identyfikator
+przypadku, jego kategorię, tekstowy \emph{system\_prompt} zbudowany z~realnego
+wiersza danych sensorowych, pytanie użytkownika oraz
+wzorcową odpowiedź \emph{golden\_answer}. Zbiór wygenerowano jednorazowo przy użyciu modelu Claude Sonnet~4.6. Wybór modelu znacznie większego i~bardziej zaawansowanego od lokalnie uruchamianych modeli (omawianych w pracy) pozwolił zapewnić wysoką jakość odpowiedzi referencyjnych. Do integracji i~wywołania modelu wykorzystano API platformy \href{https://openrouter.ai}{OpenRouter}, będącej wygodnym agregatorem modeli językowych od wielu dostawców.
+
+Rozkład kategorii przypadków przedstawiono w~tabeli~\ref{tab:golden_kategorie}.
 
 \begin{table}[H]
   \centering
@@ -88,38 +104,44 @@ przypadków przedstawiono w~tabeli~\ref{tab:golden_kategorie}.
   \end{tabular}
 \end{table}
 
-Ważna uwaga metodologiczna: \emph{golden\_answer} nie służy do porównania
-\texttt{tekst == tekst}. LLM-judge otrzymuje jednocześnie \emph{system\_prompt},
-\emph{question}, \emph{golden\_answer} i~\emph{model\_answer}, a~następnie
-ocenia jakość semantyczną odpowiedzi w~kontekście dostarczonych danych.
-
-Kategorie \texttt{missing\_data} i~\texttt{stale\_data} są najtrudniejsze,
-ponieważ wymagają od modelu rozpoznania granic własnej wiedzy --- właściwość
-zależna od wag modelu, a~nie od konfiguracji inferencji. Empiryczne potwierdzenie
-tej tezy przedstawiono w~sekcji~\ref{subsec:hallucination_dominance}.
+Kategorie \texttt{missing\_data} i~\texttt{stale\_data} uznano za najbardziej wymagające,
+ponieważ są podatne na halucynacje, która jak zaznaczono w analizie literatury \ref{sec:analiza_literatury} jest krytycznym czynnikiem w ocenie jakości odpowiedzi modeli językowych.
 
 \subsubsection{Metryki oceny i wzór composite score}
+\label{subsec:metryki}
 
-Metryki oceny dzielą się na trzy grupy. Grupa~1 obejmuje metryki wydajnościowe
-mierzone deterministycznie po stronie serwera: TTFT~[ms] (czas do pierwszego
-tokenu), E2E~[ms] (czas do ostatniego tokenu), \emph{generation\_ms}
-$= \mathrm{E2E} - \mathrm{TTFT}$, zużycie RAM~[MB] oraz temperaturę CPU i~flagę
-dławienia z~mikroserwera. Grupa~2 obejmuje metryki jakościowe zwracane przez
-LLM-judge: \emph{faithfulness}, \emph{answer\_relevancy}, \emph{conciseness}
-oraz binarną flagę \emph{hallucination\_flag}, która zeruje wynik łączny.
-Grupa~3 obejmuje \emph{polish\_quality} (naturalność języka polskiego) ---
-metryka ta jest rejestrowana, lecz nie wchodzi do wzoru \emph{composite score}.
+\begin{table}[H]
+  \centering
+  \caption{Metryki oceny stosowane w~benchmarku (trzy grupy).}
+  \label{tab:haiku_metryki}
+  \begin{tabular}{cllp{5.6cm}}
+    \hline
+    Grupa & Metryka & Zakres & Znaczenie \\
+    \hline
+    1 & TTFT & ms & Czas do pierwszego tokenu \\
+    1 & E2E & ms & Czas do ostatniego tokenu \\
+    1 & \emph{generation\_ms} & ms & $\mathrm{E2E}-\mathrm{TTFT}$ \\
+    1 & RAM & MB & Zużycie pamięci na Raspberry~Pi \\
+    1 & temperatura CPU & $^\circ$C & Temperatura procesora z~mikroserwera \\
+    1 & flaga dławienia & binarna & Przegrzanie / throttling procesora \\
+    \hline
+    2 & \texttt{faithfulness} & $[0,1]$ & Czy każde twierdzenie faktyczne wynika z~kontekstu sensorowego \\
+    2 & \texttt{answer\_relevancy} & $[0,1]$ & Czy odpowiedź adresuje zadane pytanie \\
+    2 & \texttt{conciseness} & $[0,1]$ & Czy odpowiedź jest zwięzła, bez zbędnych informacji \\
+    2 & \texttt{hallucination\_flag} & binarna & \texttt{true}, gdy odpowiedź zawiera fakty spoza kontekstu; zeruje wynik łączny \\
+    \hline
+    3 & \texttt{polish\_quality} & $[0,1]$ & Naturalność i~poprawność języka polskiego; rejestrowana, poza \emph{composite score} \\
+    \hline
+  \end{tabular}
+\end{table}
 
-Wzór na \emph{composite score} przedstawiono w~równaniu~\eqref{eq:composite_score}.
-Wagi jakościowe (0{,}40 / 0{,}30 / 0{,}20) stanowią świadomy wybór projektowy:
-\emph{faithfulness} ma najwyższą wagę, ponieważ brak halucynacji jest kryterium
-numer~1 dla asystenta informującego o~stanie domu. Składniki opóźnienia (E2E
-i~TTFT, łącznie 0{,}10) są rozdzielone, ponieważ moduł TTS może rozpocząć
-syntezę mowy przed zakończeniem generacji tokenów. Capy 90\,s (E2E) i~45\,s
-(TTFT) zastąpiły wcześniejszy cap 20\,s: przy capie 20\,s wszystkie typowe
-E2E w~pierwszym przebiegu bez chłodzenia przekraczały próg, przez co
-\emph{latency\_bonus} był zerowy dla wszystkich triali i~Optuna nie różnicowała
-konfiguracji pod względem czasu (sekcja~\ref{subsec:run1}).
+Metryki z~tabeli~\ref{tab:haiku_metryki} podzielono na trzy grupy.
+Grupa~1 obejmuje metryki wydajnościowe mierzone deterministycznie przez urządzenie brzegowe.
+Grupa~2 to metryki jakościowe zwracane przez LLM-oceniający (Haiku~3.5).
+Grupa~3 obejmuje \emph{polish\_quality} został dodany w celu przyszłych ewaluacji jakościowych odpowiedzi.
+
+Metryki z grupy drugiej składają się na \emph{composite score}. W oparciu o literaturę oraz standardy \cite{Es2024Ragas,ConCISE2025,DefAn2024} przyjęto go jako sposób matematycznego wyznaczania jakości odpowiedzi porównywanych modeli. Konieczne 
+do wyznaczenia composite score było przyjęcie wag dla każdej z metryk. Wzór przedstawiony w równaniu \ref{eq:composite_score}.
 
 \begin{equation}
   \label{eq:composite_score}
@@ -134,22 +156,15 @@ gdzie $f$, $r$, $c$ to odpowiednio \emph{faithfulness}, \emph{answer\_relevancy}
 i~\emph{conciseness}, a~$\ell = 0{,}05 \cdot (1 - \min(\mathrm{e2e\_ms}/90\,000,\, 1))
 + 0{,}05 \cdot (1 - \min(\mathrm{ttft\_ms}/45\,000,\, 1))$.
 
-Metryki jakościowe nawiązują do literatury: RAGAS (\emph{faithfulness},
-\emph{answer\_relevancy}), ConCISE (\emph{conciseness}) oraz DefAn
-(spójność odpowiedzi na parafrazy).
+W prezenotwanym rozwiązaniu\emph{faithfulness} ma najwyższą wagę, ponieważ odpowiedź trzymająca się faktów jest niezwykle istotna w konktekście tej pracy- asystenta głoswoego. Składniki opóźnienia (E2E
+i~TTFT, łącznie 0{,}10) zostały rozdzielone, ponieważ moduł TTS może rozpocząć
+syntezę mowy przed zakończeniem generacji tokenów co powoduje wrażenie bardziej płynnej interakcji. 
 
-Dla opóźnień w~dalszej części rozdziału przyjęto dwa modele robocze:
-przy Optunie (zmienny prompt, cold start) E2E raportuje się jako
-\textbf{średnia~$\pm\sigma$} przy założeniu rozkładu normalnego; przy
-pomiarach kwantyzacji (warm/cold, $n\approx 100$) czasy dodatnie i~prawostronnie
-skośne modeluje się rozkładem \textbf{log-normalnym}, a~lokalizację podaje się
-jako medianę modelu~$e^{\hat\mu}$ z~przedziałem~$e^{\hat\mu\pm\hat\sigma}$.
+\subsubsection{Dostrajanie parametrów pracy modelu}
 
-\subsubsection{Przestrzeń hiperparametrów i Optuna}
-
-Optymalizację hiperparametrów inferencji przeprowadzono biblioteką Optuna
-z~probóbnikiem TPE (\emph{Tree-structured Parzen Estimator}). Przeszukiwana
-przestrzeń parametrów przedstawiono w~tabeli~\ref{tab:optuna_hparams}.
+Optymalizację hiperparametrów inferencji modelu przeprowadzono z wykorzystaniem biblioteki Optuna
+wykorzystującej metodę TPE (\emph{Tree-structured Parzen Estimator}). Przeszukiwana
+przestrzeń współczynnik pracy modelu przedstawiono w~tabeli~\ref{tab:optuna_hparams}.
 
 \begin{table}[H]
   \centering
@@ -168,19 +183,15 @@ przestrzeń parametrów przedstawiono w~tabeli~\ref{tab:optuna_hparams}.
   \end{tabular}
 \end{table}
 
-Pełna siatka parametrów wynosiłaby $8 \times 3 \times 3 \times 5 \times 4
-= 1440$ kombinacji $\times$ 20~promptów $= 28\,800$ zapytań. Optuna z~80~trialami
-($80 \times 20 = 1600$ ewaluacji LLM-judge) osiąga porównywalne pokrycie
-obszarów obiecujących dzięki bayesowskiemu ukierunkowaniu. Alokacja triali:
-\texttt{gemma3:4b} i~\texttt{gemma2:2b} po 30~triali, \texttt{llama3.2:3b}
-i~\texttt{qwen2.5:3b} po 10~triali; \texttt{phi3.5} pominięto po pierwszym
-przebiegu z~dławieniem termicznym (sekcja~\ref{subsec:run1}).
+Pełna siatka parametrów wynosi $8 \times 3 \times 3 \times 5 \times 4
+= 1440$ kombinacji $\times$ 20~promptów $= 28\,800$ zapytań. Optuna z~80~trialami (przejściami przez pełny zestaw 20 pytań)
+($80 \times 20 = 1600$ ewaluacji LLM-oceniającego) osiąga porównywalne pokrycie
+obszarów obiecujących dzięki istocie swojego działania. Nie prowadzono testów Nie na wszystkich modelach przeprowadzano testy tej samej długości.
 
 \subsubsection{Modele kandydujące}
 
-Do badań wybrano sześć modeli klasy 2--5B parametrów, dostępnych przez Ollamę
-i~obsługujących język polski w~stopniu komunikatywnym. Tabela~\ref{tab:modele_kandydaci}
-przedstawia modele wraz z~informacją o~udziale w~benchmarku Optuny.
+Do badań wybrano sześć modeli klasy SLM, których wielkość zawierała się w przedziale  2--5B parametrów. Kierowano się przede wszystim wielkością modelu oraz postanowiono postawić na znanych dostawców. Tabela~\ref{tab:modele_kandydaci}
+przedstawia wybranych kandydatów..
 
 \begin{table}[H]
   \centering
@@ -189,26 +200,16 @@ przedstawia modele wraz z~informacją o~udziale w~benchmarku Optuny.
   \small
   \begin{tabular}{lllll}
     \hline
-    Model & Parametry & GGUF Q4\_K\_M & Producent & W benchmarku? \\
+    Model & Parametry & GGUF Q4\_K\_M & Producent \\
     \hline
-    Llama~3.2~3B  & 3{,}2~mld & ${\sim}$2{,}0~GB & Meta       & Tak (10~triali) \\
-    Phi-3.5 Mini  & 3{,}8~mld & ${\sim}$2{,}4~GB & Microsoft  & Wykluczony$^\dagger$ \\
-    Gemma~2~2B    & 2{,}6~mld & ${\sim}$1{,}7~GB & Google     & Tak (30~triali) \\
-    Gemma~3~4B    & 4{,}0~mld & ${\sim}$2{,}3~GB & Google     & Tak (30~triali) \\
-    Qwen~2.5~3B   & 3{,}0~mld & ${\sim}$2{,}0~GB & Alibaba    & Tak (10~triali) \\
-    Bielik~4.5B   & 4{,}5~mld & ${\sim}$2{,}7~GB & SpeakLeash & Tylko kwantyzacja$^\ddagger$ \\
+    Llama~3.2~3B  & 3{,}2~mld & ${\sim}$2{,}0~GB & Meta        \\
+    Phi-3.5 Mini  & 3{,}8~mld & ${\sim}$2{,}4~GB & Microsoft  \\
+    Gemma~2~2B    & 2{,}6~mld & ${\sim}$1{,}7~GB & Google     \\
+    Gemma~3~4B    & 4{,}0~mld & ${\sim}$2{,}3~GB & Google     \\
+    Qwen~2.5~3B   & 3{,}0~mld & ${\sim}$2{,}0~GB & Alibaba    \\
+    Bielik~4.5B   & 4{,}5~mld & ${\sim}$2{,}7~GB & SpeakLeash \\
     \hline
   \end{tabular}
-
-  \vspace{0.5em}
-  \footnotesize
-  $^\dagger$ \texttt{phi3.5}: 49\% halucynacji i~24\% timeoutów po chłodzeniu;
-  przy $20 \times 30$ promptach samo oczekiwanie na timeouty trwałoby ok.~1{,}9~h,
-  dane nieużyteczne do oceny jakości $\rightarrow$ wykluczony z~pełnej Optuny.
-
-  $^\ddagger$ \texttt{bielik-4.5b}: mediana modelu LN czasu generacji Q8\_0
-  $\approx 66$~s $\rightarrow$ zbyt wolny do pętli Optuny; uwzględniony wyłącznie
-  w~eksperymencie kwantyzacji (sekcja~\ref{subsec:kwantyzacja}).
 \end{table}
 
 
@@ -221,65 +222,62 @@ przedstawia modele wraz z~informacją o~udziale w~benchmarku Optuny.
 \label{subsec:run1}
 \label{subsec:run2}
 
-Pierwszy przebieg Optuny (\texttt{dataset=results-throttling}, pięć triali
-na pięciu modelach) wykonano bez aktywnego chłodzenia Raspberry~Pi~5.
-W~każdym z~500~rekordów (\texttt{throttling\_rate}$= 100\%$) procesor pracował
-w~trybie dławienia: temperatura CPU 84{,}0--91{,}7\,°C (mediana 88{,}9\,°C).
-Na Raspberry~Pi~5 skalowanie częstotliwości aktywuje się ok.~80\,°C, a~twarde
+Testy rozpoczęto ze wskazaną wyżej grupą modeli. Bardzo szybko okazało się, że czsy odpowiedzi bardzo często przekraczają górną granicę pomiaru, którą wyznaczono na 60 sekund. Po analizie danych jasna stała się przyczyna.
+W~każdym z~500~rekordów procesor pracował
+w~trybie throttling (ang. dławienie). Dzięki pomiarom mikroserwera na RPi możliwe było odczytanie temperatury CPU.
+Na Raspberry~Pi~5 throttling jest metodą ograniczania częstotliwości taktowania procesora w celu obniżenia temperatury, skutkuje ona znacznym obniżeniem mocy obliczeniowej jednostki. Pierwsze ogaraniczenia aktywowane są przy ~80\,°C, a~twarde
 dławienie (\texttt{vcgencmd get\_throttled 0x2}) ok.~85\,°C.
 
 Przy przekroczeniu limitu czasu (60\,s) Ollama zwraca pustą odpowiedź, którą
 LLM-judge klasyfikuje jako halucynację (score $= 0$). Odnotowano 169~timeoutów
 z~korelacją 100\% względem flagi halucynacji. Dla \texttt{gemma3:4b} 42\%
-rekordów kończyło się timeoutem. Ranking (tabela~\ref{tab:ranking_run1}) był
-w~zasadzie fałszywy: \texttt{gemma2:2b} zajmował pierwsze miejsce, a~lepszy
+rekordów kończyło się timeoutem. W~efekcie ranking z~tabeli~\ref{tab:ranking_run1}
+był w~zasadzie fałszywy: \texttt{gemma2:2b} zajmował pierwsze miejsce, a~lepszy
 semantycznie \texttt{gemma3:4b} spadał na czwarte --- większe modele dłużej
-obciążają CPU i~przy braku chłodzenia generują timeouty.
+obciążają CPU i~przy braku chłodzenia generują timeouty. Temperatura CPU
+utrzymywała się w~zakresie 84{,}0--91{,}7\,°C (mediana 88{,}9\,°C), a~throttling
+występował w~100\% przypadków.
 
 \begin{table}[H]
   \centering
   \caption{Ranking modeli bez aktywnego chłodzenia
-           (\texttt{results-throttling}, throttling 100\%).}
+           ($n=100$ pomiarów na model).}
   \label{tab:ranking_run1}
-  \begin{tabular}{clccc}
+  \begin{tabular}{clccccc}
     \hline
-    \# & Model & Score & Halucynacje & E2E med. [ms] \\
+    \# & Model & Score & Halucynacje & E2E med. [ms] & Mediana temp. [$^\circ$C] & Throttling \\
     \hline
-    1 & \texttt{gemma2:2b}  & 0{,}693 & 16\% & 37\,229 \\
-    2 & \texttt{llama3.2:3b}& 0{,}589 & 30\% & 49\,199 \\
-    3 & \texttt{qwen2.5:3b} & 0{,}547 & 37\% & 53\,169 \\
-    4 & \texttt{gemma3:4b}  & 0{,}497 & 42\% & 57\,584 \\
-    5 & \texttt{phi3.5}     & 0{,}024 & 96\% & 60\,000 \\
+    1 & \texttt{gemma2:2b}  & 0{,}693 & 16\% & 37\,229 & 87{,}8 & 100\% \\
+    2 & \texttt{llama3.2:3b}& 0{,}589 & 30\% & 49\,199 & 88{,}4 & 100\% \\
+    3 & \texttt{qwen2.5:3b} & 0{,}547 & 37\% & 53\,169 & 88{,}9 & 100\% \\
+    4 & \texttt{gemma3:4b}  & 0{,}497 & 42\% & 57\,584 & 89{,}8 & 100\% \\
+    5 & \texttt{phi3.5}     & 0{,}024 & 96\% & 60\,000 & 90{,}0 & 100\% \\
     \hline
   \end{tabular}
 \end{table}
 
-Po instalacji radiatora i~wentylatora sterowanego GPIO
-(\texttt{dataset=results-5-trials-nothrottling}) dławienie spadło do 0\%
-(0/500 rekordów), a~temperatura CPU do 57{,}6--73{,}6\,°C (mediana 65{,}3\,°C).
-Ranking uległ korekcie (tabela~\ref{tab:ranking_run2}): \texttt{gemma3:4b}
-awansował na miejsce~1 (score $0{,}806$, halucynacje $4\%$), a~E2E skróciło
-się z~57\,584~ms do 31\,742~ms ($1{,}81\times$). Wniosek: stabilność termiczna
-jest warunkiem koniecznym wiarygodnego benchmarku na urządzeniu brzegowym ---
-bez niej ranking mierzy odporność na dławienie, nie jakość modelu.
+Jako receptę na problemy termiczne wskazano aktywne chłodzenie procesora. Układ RPi został rozbudowany o radiator producenta wyposażony w wentylator. Po instalacji chłodzenia przeprowadzono test sprawdzający czy przyniosło ono zamierony efekt. Flaga throttlingu nie została oznaczona w żadnym z przypadków testowych (0/500), a~temperatura CPU do 57{,}6--73{,}6\,°C (mediana 65{,}3\,°C). Zmiana wprowadziła też pierwsze niezerowe wyniki \emph{composite\_score} modeli. Wyniki przedstawiono w tabeli \ref{tab:ranking_run2}.
 
 \begin{table}[H]
   \centering
-  \caption{Ranking modeli po chłodzeniu aktywnym
-           (\texttt{results-5-trials-nothrottling}, 0\% throttling).}
+  \caption{Ranking modeli po zastosowaniu aktywnego chłodzenia.}
   \label{tab:ranking_run2}
-  \begin{tabular}{clccc}
+  \begin{tabular}{clcccc}
     \hline
-    \# & Model & Score & Halucynacje & E2E med. [ms] \\
+    \# & Model & Score & Halucynacje & E2E med. [ms] & Throttling \\
     \hline
-    1 & \texttt{gemma3:4b}  & 0{,}806 & 4\%  & 31\,742 \\
-    2 & \texttt{gemma2:2b}  & 0{,}679 & 19\% & 20\,879 \\
-    3 & \texttt{qwen2.5:3b} & 0{,}667 & 19\% & 29\,713 \\
-    4 & \texttt{llama3.2:3b}& 0{,}653 & 20\% & 27\,145 \\
-    5 & \texttt{phi3.5}     & 0{,}380 & 49\% & 52\,363 \\
+    1 & \texttt{gemma3:4b}  & 0{,}806 & 4\%  & 31\,742 & 0\% \\
+    2 & \texttt{gemma2:2b}  & 0{,}679 & 19\% & 20\,879 & 0\% \\
+    3 & \texttt{qwen2.5:3b} & 0{,}667 & 19\% & 29\,713 & 0\% \\
+    4 & \texttt{llama3.2:3b}& 0{,}653 & 20\% & 27\,145 & 0\% \\
+    5 & \texttt{phi3.5}     & 0{,}380 & 49\% & 52\,363 & 0\% \\
     \hline
   \end{tabular}
 \end{table}
+
+Wstępne problemy z~regulacją termiczną CPU uwydatniły
+uwydatnić, jak bardzo stabilność temperaturowa warunkuje
+ewaluację modeli językowych na urządzeniach klasy Raspberry Pi 5. Nie spotkało się to ze zdziwieniem, gdyż zagadnienie to szeroko opisaywane jest w literaturze \cite{Tummalapalli2026} oraz przez inżynierów w internecie. Aktywne chłodzenie okazało się zapewniać stabilne warunki pracy platformy i~umożliwiło rzetelne przeprowadzenie dalszych badań.
 
 \subsubsection{Dominacja flagi halucynacji}
 \label{subsec:hallucination_dominance}
