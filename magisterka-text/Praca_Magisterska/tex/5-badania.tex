@@ -282,14 +282,16 @@ ewaluację modeli językowych na urządzeniach klasy Raspberry Pi 5. Nie spotka�
 \subsubsection{Dominacja flagi halucynacji}
 \label{subsec:hallucination_dominance}
 
-Pełny przebieg Optuny (\texttt{dataset=results-selected-9.05}, 80~triali)
-umożliwił analizę źródeł wariancji \emph{composite score}. Regresja
-wieloczynnikowa (rysunek~\ref{fig:regression_r2}) wykazała, że sama flaga
-halucynacji wyjaśnia $R^2 = 0{,}9922$ wariancji score --- hiperparametry
-inferencji wyjaśniają jedynie $R^2 = 0{,}2997$. Model (\texttt{model\_only})
-daje $R^2 = 0{,}8201$; dodanie hiperparametrów (\texttt{model\_plus\_hparams})
-podnosi $R^2$ do 0{,}8587 ($\Delta R^2 = 0{,}039$). Pełny model osiąga
-$R^2 = 0{,}9982$.
+Dzięki aktywnem chłodzeniu osiągnięto stabilne warunki pracy. Pozwoliło to w stabilnych warunkach przeprowadzić ponownie badania, wykonano przebiegi na wszystkich modelach kandydujących, wymienionych w tabeli \ref{tab:modele_kandydaci}. Po wykonaniu 80 triali (napisz mi tutaj rozkład ile na ktorym modelu) przystąpiono do wstpęnej analizy danyc. Jej celem było sprawdzenie czy optymalizacja hiperparametrów wpływa na wartość \emph{composite score}. Przeprowadzono regresję wieloczynnikową, która jest szeroko stosowaną metodą badania istotnych związków między zmiennymi. Wyniki analizy przedstawiono na rysunku \ref{fig:regression_r2}.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.75\textwidth]{07_regression_r2_comparison_selected.png}
+  \caption{Porównanie $R^2$ modeli regresji wyjaśniających wariancję score
+           (\texttt{results-selected-9.05}).}
+  \label{fig:regression_r2}
+\end{figure}
+Regresja wieloczynnikowa wykazała, że flaga halucynacji samodzielnie osiąga $R^2 = 0{,}99$, czyli samodzielnie wyjaśnia ponad 99\% wariancji score. Pozostałe zmienne inferencji wyjaśniają jedynie $R^2 = 0{,}3$, czyli około 30\% wariancji score. Wyniki takie wynikają oczywiście ze sposobu wyznacznie wzoru na \emph{composite score} \ref{eq:composite_score}. Wynik jest zerowany kiedy model halucynuje, jest to celowy zabieg. Jedną z głównych bolączek małych modeli językowych jest ich halucynacja. tak surowe karanie pozwala łatwo oznaczać przypadki halucynacji. Liniowość zaleźności \emph{composite score} od wskaźnika halucynacji przedstawiono na rysunku \ref{fig:score_vs_hall}.
 
 \begin{figure}[H]
   \centering
@@ -300,19 +302,9 @@ $R^2 = 0{,}9982$.
   \label{fig:score_vs_hall}
 \end{figure}
 
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.75\textwidth]{07_regression_r2_comparison_selected.png}
-  \caption{Porównanie $R^2$ modeli regresji wyjaśniających wariancję score
-           (\texttt{results-selected-9.05}).}
-  \label{fig:regression_r2}
-\end{figure}
 
-Algebraiczna tożsamość $\mathrm{score\_mean} \approx (1 - \mathrm{hall\_rate})
-\times \mathrm{nonhall\_score\_mean}$ zachodzi z~błędem poniżej $10^{-8}$.
-Rozpiętość \emph{score\_mean} wynosi 0{,}604, podczas gdy rozpiętość
-\emph{nonhall\_score} to zaledwie 0{,}119 --- pięciokrotnie mniejsza
-(rysunek~\ref{fig:nonhall_spread}).
+
+Istotność związku flagi halucynacji z \emph{composite score} jest bardzo wysoka. Nie oznacza to jednak, że inne hiperparametry mają wpływ zerowy. Wykonano analizę ich wpływu na \emph{composite score}. Wyniki przedstawiono na rysunku \ref{fig:hparam_heatmap}.
 
 \begin{figure}[H]
   \centering
@@ -323,11 +315,34 @@ Rozpiętość \emph{score\_mean} wynosi 0{,}604, podczas gdy rozpiętość
   \label{fig:nonhall_spread}
 \end{figure}
 
-Halucynacje koncentrują się w~kategoriach \texttt{missing\_data}
-(39{,}4\%) i~\texttt{stale\_data} (29{,}4\%); w~\texttt{factual\_status}
-i~\texttt{paraphrase} są marginalne (rysunek~\ref{fig:case_hall_rates}).
-Mapa korelacji hiperparametrów (rysunek~\ref{fig:hparam_heatmap}) nie wskazuje
-silnych związków z~jakością.
+Dzięki wykresowi dobitnie widać, że wyniki jakościowe \emph{po wyłączeniu}
+halucynacji koncentrują się wokół wąskiego zbioru wartości: rozpiętość
+wyników po wykluczeniu przypadków halucynacji wynosi zaledwie 0{,}119, podczas gdy rozpiętość
+wszystkich przebiegów sięga 0{,}604 --- około pięciokrotnie więcej.
+Wpływ hiperparametrów na jakość odpowiedzi bez halucynacji jest zatem
+niewielki, co nie znaczy, że jest on pomijalny. Postanowiono wybrać parametry dające najlepsze wyniki na tym etapie, aby to przy ich zachwaniu prowadzić dalsze badania. Przyjęte wartości przedstawiono w~tabeli~\ref{tab:wybrane_hparams}.
+
+\begin{table}[H]
+  \centering
+  \caption{Hiperparametry inferencji przyjęte do dalszych eksperymentów
+           (po etapie Optuny).}
+  \label{tab:wybrane_hparams}
+  \begin{tabular}{ll}
+    \hline
+    Parametr & Wartość \\
+    \hline
+    \texttt{temperature}     & 0{,}20 \\
+    \texttt{num\_ctx}        & 2048 \\
+    \texttt{num\_predict}    & 128 \\
+    \texttt{top\_p}          & 0{,}90 \\
+    \texttt{repeat\_penalty} & 1{,}05 \\
+    \hline
+  \end{tabular}
+\end{table}
+
+
+Po dokananiu analizy wpływu czynników na wynik końcowy miary jakości odpowiedzi. Za zasadne uznano również analizę przypdków testowych. Testy polegają na repetetywnym zadawniu serii 20 pytań ze zbioru \emph{golden dataset}. Zbiór ten składa się z pytań kilku kategorii, co opisano w tabeli \ref{tab:golden_dataset}. Czynnikiem dominującym wynik jest flaga halucynacji, zbadanao zatem jej występowanie w poszczególnych kategoriach. Wyniki przedstawiono na rysunku \ref{fig:case_hall_rates}.
+
 
 \begin{figure}[H]
   \centering
@@ -337,54 +352,89 @@ silnych związków z~jakością.
   \label{fig:case_hall_rates}
 \end{figure}
 
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.75\textwidth]{06_hparam_correlation_heatmap_selected.png}
-  \caption{Mapa korelacji hiperparametrów z~metrykami wynikowymi
-           (\texttt{results-selected-9.05}). Brak silnych korelacji z~jakością.}
-  \label{fig:hparam_heatmap}
-\end{figure}
+Halucynacje koncentrują się w dwóch kategoriach: \texttt{missing\_data}
+(39{,}4\%) i~\texttt{stale\_data} (29{,}4\%). Widać wyraźnie, że kiedy zapytanie dotyczy danych niewystępujących lub nieaktualnych w kontekśćie model chętnie wprowadza do odpowiedzi informacje, które są nieprawdziwe. Jest to ważny wniosek dla kolejnych etapów badań.
 
-Kluczowy wniosek etapu Optuny: zmiana hiperparametrów wpływa głównie na
-\emph{kiedy} model halucynuje, nie na \emph{jak dobrze} odpowiada, gdy nie
-halucynuje. Dalsza optymalizacja TPE ma marginalny wpływ na jakość semantyczną.
-Problemem są trudne scenariusze wymagające działania na poziomie wag modelu.
-To motywuje przejście do kwantyzacji i~\emph{prefix caching} jako dźwigni
-opóźnienia oraz plan fine-tuningu (sekcja~\ref{subsec:finetuning_plan}).
+\subsubsection{Opóźnienie E2E i model Gaussa}
 
-\subsubsection{Modelowanie E2E: rozkład normalny}
-
-Dla opóźnienia E2E w~protokole Optuny (zmienny prompt, cold start) przyjęto
-model normalny. Rysunek~\ref{fig:optuna_gauss_fit} pokazuje histogramy E2E
-oraz dopasowaną gęstość~$\mathcal{N}(\hat\mu,\hat\sigma^2)$ per model.
-Lokalizację raportuje się więc jako \textbf{średnią}, a~rozrzut jako~$\sigma$
-(nie medianę empiryczną).
+Po dokonaniu analizy aspektów jakościowych odpowiedzi postanowiono przyjrzeć
+się bliżej drugiemu kluczowemu aspektowi asystenta głosowego --- opóźnieniu
+end-to-end (E2E). Benchmark zbierał już te pomiary (tabela~\ref{tab:benchmark_metrics}),
+więc nie było konieczne przeprowadzanie nowych ewaluacji. Analizę rozpoczęto od
+dopasowania rozkładu: w~protokole Optuny (zmienny prompt, cold start) czasy E2E
+układają się w~krzywą Gaussa i~modelowane są jako
+$\mathcal{N}(\hat\mu,\hat\sigma^2)$. Rysunek~\ref{fig:optuna_gauss_fit} pokazuje
+histogramy E2E oraz dopasowaną gęstość per model.
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.95\textwidth]{optuna_e2e_gauss_fit_matrix.png}
-  \caption{Dopasowanie rozkładu normalnego do opóźnienia E2E
-           (\texttt{results-selected-9.05}). Histogram oraz gęstość
-           $\mathcal{N}(\hat\mu,\hat\sigma^2)$ per model.}
+  \caption{Dopasowanie rozkładu normalnego do opóźnienia E2E.
+           Histogram oraz gęstość $\mathcal{N}(\hat\mu,\hat\sigma^2)$ per model.}
   \label{fig:optuna_gauss_fit}
 \end{figure}
 
-Kompromis Pareto (rysunek~\ref{fig:pareto_latency_hall}) zestawia średnie E2E
-($\pm\sigma$) ze wskaźnikiem halucynacji. Żaden model nie dominuje w~obu
-wymiarach jednocześnie: \texttt{gemma2:2b} jest najszybszy
-($\mathrm{E2E}\approx 20{,}5$~s), lecz ma ok.~18\%~halucynacji;
-\texttt{gemma3:4b} jest wolniejszy ($\approx 30{,}4$~s), lecz osiąga
+Przyjęto lokalizację $\hat\mu$ (średnia E2E) oraz skalę $\hat\sigma$ (odchylenie
+standardowe). Przedział $\hat\mu\pm\hat\sigma$ opisuje typowy zakres pomiarów przy
+dobrym dopasowaniu normalnym, a~$\hat\mu\pm 2\hat\sigma$ --- szerszy zakres
+zmienności między przebiegami. Są to charakterystyki robocze modelu Gaussa,
+a~nie formalny test normalności. Parametry per model zestawiono w~tabeli~\ref{tab:optuna_e2e_gauss}.
+
+\begin{table}[H]
+  \centering
+  \caption{Model Gaussa dla E2E w~protokole Optuny: lokalizacja~$\hat\mu$,
+           skala~$\hat\sigma$, przedziały $\hat\mu\pm\hat\sigma$
+           i~$\hat\mu\pm 2\hat\sigma$ oraz współczynnik zmienności
+           $\mathrm{CV}=\hat\sigma/\hat\mu$.}
+  \label{tab:optuna_e2e_gauss}
+  \small
+  \begin{tabular}{lcccccc}
+    \hline
+    Model & $n$ & $\hat\mu$ [s] & $\hat\sigma$ [s] & $\hat\mu\pm\hat\sigma$ [s]
+          & $\hat\mu\pm 2\hat\sigma$ [s] & CV \\
+    \hline
+    \texttt{gemma2:2b}   & 600 & 20{,}5 & 5{,}2 & 15{,}4--25{,}7 & 10{,}2--30{,}9 & 0{,}25 \\
+    \texttt{llama3.2:3b} & 200 & 26{,}8 & 6{,}3 & 20{,}5--33{,}1 & 14{,}2--39{,}4 & 0{,}24 \\
+    \texttt{qwen2.5:3b}  & 200 & 29{,}4 & 6{,}6 & 22{,}8--36{,}0 & 16{,}1--42{,}6 & 0{,}22 \\
+    \texttt{gemma3:4b}   & 600 & 30{,}4 & 7{,}6 & 22{,}8--38{,}0 & 15{,}3--45{,}5 & 0{,}25 \\
+    \hline
+  \end{tabular}
+\end{table}
+
+Modele różnią się przede wszystkim lokalizacją, a~nie profilem zmienności:
+CV pozostaje bliskie $0{,}22$--$0{,}25$. Ranking średniego E2E to
+\texttt{gemma2:2b} ($\hat\mu\approx 20{,}5$~s), następnie
+\texttt{llama3.2:3b} ($\approx 26{,}8$~s), a~dalej para
+\texttt{qwen2.5:3b} i~\texttt{gemma3:4b} ($\approx 29{,}4$--$30{,}4$~s).
+Przedziały $\hat\mu\pm\hat\sigma$ obu Gemm stykają się lekko
+(górna krawędź \texttt{gemma2:2b} $\approx 25{,}7$~s, dolna krawędź
+\texttt{gemma3:4b} $\approx 22{,}8$~s), ale środki rozkładów są wyraźnie
+rozdzielone. Llama i~Qwen leżą czasowo bliżej wolniejszej Gemmy niż szybszej.
+
+Połączenie z~analizą jakościową zmienia jednak obraz rankingowy. Przy E2E
+porównywalnym z~\texttt{gemma3:4b} modele \texttt{llama3.2:3b}
+i~\texttt{qwen2.5:3b} mają wskaźnik halucynacji rzędu 16--21\% --- wielokrotnie
+wyższy niż ok.~1{,}2\% u~\texttt{gemma3:4b} --- więc nie tworzą atrakcyjnego
+kompromisu na tym etapie. Na froncie jakość--czas pozostają obie Gemmy:
+\texttt{gemma2:2b} jest wyraźnie szybsza, lecz częściej halucynuje;
+\texttt{gemma3:4b} jest wolniejsza o~ok.~10~s średniego E2E, lecz niemal nie
+wprowadza faktów spoza kontekstu.
+
+Kompromis Pareto (rysunek~\ref{fig:pareto_latency_hall}) formalizuje ten układ:
+żaden model nie dominuje jednocześnie w~obu wymiarach.
+\texttt{gemma2:2b} ma najniższe $\hat\mu$ E2E, lecz ok.~18\%~halucynacji;
+\texttt{gemma3:4b} jest wolniejsza ($\hat\mu\approx 30{,}4$~s), lecz osiąga
 ok.~1{,}2\%~halucynacji. Dla asystenta informującego o~stanie domu błędna
 informacja jest groźniejsza niż kilka sekund dłuższej odpowiedzi --- stąd
-wybór \texttt{gemma3:4b} jako kandydata produkcyjnego. Rozsądny preset
-hiperparametrów wystarcza; Optuna nie wskazuje silnie dominującej konfiguracji
-jakościowej.
+wybór \texttt{gemma3:4b} jako kandydata do kolejnych etapów optymalizacji
+opóźnienia. Rozsądny preset hiperparametrów wystarcza; Optuna nie wskazuje
+silnie dominującej konfiguracji jakościowej.
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.85\textwidth]{04_latency_hallucination_pareto_selected.png}
   \caption{Kompromis Pareto: średnie opóźnienie E2E ($\pm\sigma$, model Gaussa)
-           vs wskaźnik halucynacji (\texttt{results-selected-9.05}).
+           vs wskaźnik halucynacji.
            Rozmiar punktu odpowiada średniemu \emph{composite score}.}
   \label{fig:pareto_latency_hall}
 \end{figure}
