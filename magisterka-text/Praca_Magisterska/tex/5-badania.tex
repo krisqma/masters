@@ -357,35 +357,29 @@ Halucynacje koncentrują się w dwóch kategoriach: \texttt{missing\_data}
 
 \subsubsection{Opóźnienie E2E i model Gaussa}
 
+%TODO start do redakcji
+
 Po dokonaniu analizy aspektów jakościowych odpowiedzi postanowiono przyjrzeć
-się bliżej drugiemu kluczowemu aspektowi asystenta głosowego --- opóźnieniu
-end-to-end (E2E). Benchmark zbierał już te pomiary (tabela~\ref{tab:benchmark_metrics}),
-więc nie było konieczne przeprowadzanie nowych ewaluacji. Analizę rozpoczęto od
-dopasowania rozkładu: w~protokole Optuny (zmienny prompt, cold start) czasy E2E
-układają się w~krzywą Gaussa i~modelowane są jako
-$\mathcal{N}(\hat\mu,\hat\sigma^2)$. Rysunek~\ref{fig:optuna_gauss_fit} pokazuje
-histogramy E2E oraz dopasowaną gęstość per model.
+się bliżej drugiemu kluczowemu aspektowi asystenta głosowego --- czasowi generowania odpowiedzi. Benchmark zbierał już te pomiary (tabela~\ref{tab:benchmark_metrics}),
+więc nie było konieczne przeprowadzanie nowych ewaluacji. W~protokole Optuny (zmienny prompt, cold start) czasy E2E
+układają się w~krzywą Gaussa, którą wygodnie opisać średnią oraz odchyleniem standardowym. Histogramy dla poszczególnych modeli przedstawiono na rysunku~\ref{fig:optuna_gauss_fit}.
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.95\textwidth]{optuna_e2e_gauss_fit_matrix.png}
-  \caption{Dopasowanie rozkładu normalnego do opóźnienia E2E.
-           Histogram oraz gęstość $\mathcal{N}(\hat\mu,\hat\sigma^2)$ per model.}
+  \caption{Histogram czasów E2E oraz dopasowana krzywa Gaussa per model.}
   \label{fig:optuna_gauss_fit}
 \end{figure}
 
-Przyjęto lokalizację $\hat\mu$ (średnia E2E) oraz skalę $\hat\sigma$ (odchylenie
-standardowe). Przedział $\hat\mu\pm\hat\sigma$ opisuje typowy zakres pomiarów przy
-dobrym dopasowaniu normalnym, a~$\hat\mu\pm 2\hat\sigma$ --- szerszy zakres
-zmienności między przebiegami. Są to charakterystyki robocze modelu Gaussa,
-a~nie formalny test normalności. Parametry per model zestawiono w~tabeli~\ref{tab:optuna_e2e_gauss}.
+Dla każdego modelu wyliczono średnią $\hat\mu$ oraz odchylenie standardowe $\hat\sigma$.
+Przy rozkładzie normalnym przedział $\hat\mu\pm\hat\sigma$ obejmuje ok.~68\% przypadków,
+a~$\hat\mu\pm 2\hat\sigma$ --- ok.~95\%. Wyniki zestawiono w~tabeli~\ref{tab:optuna_e2e_gauss}.
 
 \begin{table}[H]
   \centering
-  \caption{Model Gaussa dla E2E w~protokole Optuny: lokalizacja~$\hat\mu$,
-           skala~$\hat\sigma$, przedziały $\hat\mu\pm\hat\sigma$
-           i~$\hat\mu\pm 2\hat\sigma$ oraz współczynnik zmienności
-           $\mathrm{CV}=\hat\sigma/\hat\mu$.}
+  \caption{Średni czas E2E, odchylenie standardowe oraz przedziały
+           $\hat\mu\pm\hat\sigma$ i~$\hat\mu\pm 2\hat\sigma$ w~protokole Optuny.
+           CV to stosunek odchylenia do średniej.}
   \label{tab:optuna_e2e_gauss}
   \small
   \begin{tabular}{lcccccc}
@@ -401,34 +395,26 @@ a~nie formalny test normalności. Parametry per model zestawiono w~tabeli~\ref{t
   \end{tabular}
 \end{table}
 
-Modele różnią się przede wszystkim lokalizacją, a~nie profilem zmienności:
-CV pozostaje bliskie $0{,}22$--$0{,}25$. Ranking średniego E2E to
-\texttt{gemma2:2b} ($\hat\mu\approx 20{,}5$~s), następnie
-\texttt{llama3.2:3b} ($\approx 26{,}8$~s), a~dalej para
-\texttt{qwen2.5:3b} i~\texttt{gemma3:4b} ($\approx 29{,}4$--$30{,}4$~s).
-Przedziały $\hat\mu\pm\hat\sigma$ obu Gemm stykają się lekko
-(górna krawędź \texttt{gemma2:2b} $\approx 25{,}7$~s, dolna krawędź
-\texttt{gemma3:4b} $\approx 22{,}8$~s), ale środki rozkładów są wyraźnie
-rozdzielone. Llama i~Qwen leżą czasowo bliżej wolniejszej Gemmy niż szybszej.
+Z~analizy danych wynika, że najszybsze odpowiedzi udziela \texttt{gemma2:2b} ---
+średni czas E2E wynosi 20{,}5~s, a~większość pomiarów ($\hat\mu\pm\hat\sigma$)
+mieści się w~przedziale 15{,}4--25{,}7~s. Pozostałe modele są wyraźnie wolniejsze:
+\texttt{llama3.2:3b} ok.~26{,}8~s, \texttt{qwen2.5:3b} ok.~29{,}4~s,
+a~\texttt{gemma3:4b} ok.~30{,}4~s. Odchylenie stanowi u~wszystkich ok.~jednej czwartej
+średniej (CV $0{,}22$--$0{,}25$), więc modele różnią się przede wszystkim średnim
+czasem odpowiedzi, a~nie rozrzutem między przebiegami.
 
-Połączenie z~analizą jakościową zmienia jednak obraz rankingowy. Przy E2E
-porównywalnym z~\texttt{gemma3:4b} modele \texttt{llama3.2:3b}
-i~\texttt{qwen2.5:3b} mają wskaźnik halucynacji rzędu 16--21\% --- wielokrotnie
-wyższy niż ok.~1{,}2\% u~\texttt{gemma3:4b} --- więc nie tworzą atrakcyjnego
-kompromisu na tym etapie. Na froncie jakość--czas pozostają obie Gemmy:
-\texttt{gemma2:2b} jest wyraźnie szybsza, lecz częściej halucynuje;
-\texttt{gemma3:4b} jest wolniejsza o~ok.~10~s średniego E2E, lecz niemal nie
-wprowadza faktów spoza kontekstu.
+Sam czas nie może być jednak interpretowany samodzielnie. Istotny jest kompromis
+między jakością a~opóźnieniem. \texttt{llama3.2:3b} i~\texttt{qwen2.5:3b} mają E2E
+zbliżone do \texttt{gemma3:4b}, lecz halucynują w~16--21\% przypadków, podczas gdy
+\texttt{gemma3:4b} jedynie w~ok.~1{,}2\%. \texttt{gemma2:2b} jest najszybsza, ale
+halucynuje w~ok.~18\% odpowiedzi. Na rysunku~\ref{fig:pareto_latency_hall} widać
+ten układ: żaden model nie jest jednocześnie najszybszy i~najmniej halucynujący.
 
-Kompromis Pareto (rysunek~\ref{fig:pareto_latency_hall}) formalizuje ten układ:
-żaden model nie dominuje jednocześnie w~obu wymiarach.
-\texttt{gemma2:2b} ma najniższe $\hat\mu$ E2E, lecz ok.~18\%~halucynacji;
-\texttt{gemma3:4b} jest wolniejsza ($\hat\mu\approx 30{,}4$~s), lecz osiąga
-ok.~1{,}2\%~halucynacji. Dla asystenta informującego o~stanie domu błędna
-informacja jest groźniejsza niż kilka sekund dłuższej odpowiedzi --- stąd
-wybór \texttt{gemma3:4b} jako kandydata do kolejnych etapów optymalizacji
-opóźnienia. Rozsądny preset hiperparametrów wystarcza; Optuna nie wskazuje
-silnie dominującej konfiguracji jakościowej.
+Dla asystenta informującego o~stanie domu błędna informacja jest groźniejsza niż
+kilka sekund dłuższego czekania. Dlatego do kolejnych etapów optymalizacji
+opóźnienia wybrano \texttt{gemma3:4b}. Rozsądny zestaw hiperparametrów
+z~tabeli~\ref{tab:wybrane_hparams} wystarcza; Optuna nie wskazała konfiguracji
+wyraźnie lepszej jakościowo.
 
 \begin{figure}[H]
   \centering
@@ -439,6 +425,7 @@ silnie dominującej konfiguracji jakościowej.
   \label{fig:pareto_latency_hall}
 \end{figure}
 
+%TODO koniec do redakcji
 
 % ============================================================
 \subsection{Etap kwantyzacji: cold vs warm i model log-normalny}
@@ -447,17 +434,19 @@ silnie dominującej konfiguracji jakościowej.
 
 \subsubsection{Typy kwantyzacji GGUF}
 
-Modele w~Ollamie przechowywane są w~formacie GGUF z~różnymi poziomami
-kwantyzacji wag. W~badaniach uwzględniono cztery warianty:
+
+Formatem dla zapisu modeli wspieranym przez apliakcję Ollama jest GGUF. Ten sposób zapisu pliku pozwala na różne poziomy kwantyzacji wag. Jak wykazano w rozdziale \ref{sec:analiza_literatury}, kwantyzacja wag pozwala na znaczne przyspieszenie generowania odpowiedzi. Przystępując do W badaniach wpływu zmiany precyzji wag modelu uwzględniono cztery warianty:
 \begin{itemize}
   \item \textbf{Q8\_0} --- 8-bitowe wagi bez grupowania; baseline,
   \item \textbf{Q4\_K\_M} --- 4-bitowe wagi z~grupowaniem K i~mixed precision~M,
   \item \textbf{Q4\_0} --- 4-bitowe wagi bez grupowania,
   \item \textbf{Q2\_K} --- 2-bitowe wagi z~grupowaniem; agresywna kompresja.
 \end{itemize}
-Mniejsza precyzja oznacza mniejszy plik i~mniej danych do przenoszenia
-z~pamięci, co teoretycznie przyspiesza dekodowanie tokenów. Zbyt agresywna
-kwantyzacja może jednak destabilizować generację.
+Mniejsza precyzja (liczba bitów) oznacza mniejszy plik i co za tym idzie mniej danych do przenoszenia
+do pamięci podręcznej w celu ewaluacju modelu. Literatura mówi o pozytywnym wpływie kwantyzacji na czas generowania odpowiedzi. Należy pamiętać, że zbyt agresywna
+kwantyzacja może destabilizować generację. Ponownie optymalizacja w tym elemencie opiera się na pewnego rodziaju balansie(trade off) między zmniejszeniem wielkości modelu, a zachowaniem odpowiedniej jakości. 
+
+Na potrzeby testów dokonano kwantyzacji trzech modeli językowych (gemma3-4b, gemma4-e2b, bielik-4.5b). Modele wybrano na podstawie poprzednich etapów badań, Rodzina Gemma od Google wykazywała najlepsze wyniki oraz odpotowano w nichy wpływ na metody optymalizacji. Bielik natomiast w poprzednich etapach badań był bardzo wolny, dlatego postanowiono sprawdzić jego zachowanie przy zmianie precyzji wag. Tabela \ref{tab:gguf_rozmiary} przedstawia rozmiary plików wyjciowych GGUF wraz z ich rozmiarem.
 
 \begin{table}[H]
   \centering
@@ -474,44 +463,132 @@ kwantyzacja może jednak destabilizować generację.
   \end{tabular}
 \end{table}
 
-\subsubsection{Dlaczego pierwsze pomiary ``nic nie pokazywały''}
+\subsubsection{Wstępne pomiary E2E i mechanizm cold vs warm cache}
 
-Przy zmiennym prompcie lub zimnym cache metryka E2E dla różnych wariantów
-kwantyzacji wygląda podobnie, ponieważ
-$\mathrm{E2E} = \mathrm{TTFT} + \mathrm{generation\_ms}$. TTFT (prefill)
-zależy od długości promptu i~taktowania CPU, nie od precyzji wag. Kwantyzacja
-wpływa przede wszystkim na \emph{generation\_ms}. Gdy TTFT dominuje budżet
-czasu --- typowe przy cold cache --- różnice Q4/Q8 giną w~szumie E2E.
-To wyjaśnia, dlaczego wczesne porównania ``po E2E'' nie dawały czytelnego
-efektu kwantyzacji.
+Literatura zapowiadała, że obniżenie precyzji wag przyspiesza inferencję,
+ponieważ dekodowanie tokenów jest ograniczone przepustowością pamięci
+\cite{Kim2023SqueezeLLM}. Pierwsze porównanie wariantów GGUF na metryce E2E
+tego nie potwierdzało. Modele przez wiele przebiegów nie wykazywały
+czytelnego przyspieszenia przy przejściu z~Q8\_0 do Q4: warianty Q4\_0
+i~Q4\_K\_M dla \texttt{gemma3-4b} były praktycznie nierozróżnialne.
+Tabela~\ref{tab:e2e_wstepne} zestawia mediany modelu log-normalnego
+$e^{\hat\mu}$ całkowitego czasu odpowiedzi ($n\approx 100$), bez
+rozbicia na TTFT i~generację --- tak, jak wyglądało pierwsze spojrzenie
+na wyniki.
 
-\subsubsection{Cold vs warm: izolacja generation\_ms}
-
-Aby wyizolować czas generacji, zastosowano protokół \emph{warm-cache}:
-stały \emph{system\_prompt}, \texttt{keep\_alive=30m}, \texttt{streaming=True},
-\emph{generation\_ms} $= \mathrm{e2e\_ms} - \mathrm{ttft\_ms}$ per rekord.
-Równolegle zebrano pomiary \emph{cold-cache} ($n\approx 100$ per komórka
-model$\times$wariant). Rysunki~\ref{fig:dekompozycja_e2e}
-i~\ref{fig:cold_dekompozycja_e2e} pokazują dekompozycję E2E na TTFT i~generację
-jako mediany modelu log-normalnego~$e^{\hat\mu}$.
-
-\begin{figure}[H]
+\begin{table}[H]
   \centering
-  \includegraphics[width=0.95\textwidth]{03_dekompozycja_e2e.png}
-  \caption{Dekompozycja E2E na TTFT i~\emph{generation\_ms} (warm cache).
-           Wysokości słupków to mediany modelu log-normalnego $e^{\hat\mu}$
-           ($n\approx 100$). Kwantyzacja wpływa głównie na czas generacji.}
-  \label{fig:dekompozycja_e2e}
-\end{figure}
+  \caption{Wstępne porównanie wariantów kwantyzacji na metryce E2E.
+           Mediany modelu LN $e^{\hat\mu}$ ($n\approx 100$).}
+  \label{tab:e2e_wstepne}
+  \begin{tabular}{lcccc}
+    \hline
+    Model & Q2\_K & Q4\_0 & Q4\_K\_M & Q8\_0 \\
+    \hline
+    \texttt{gemma3-4b}   & 53{,}9~s & 38{,}5~s & 37{,}9~s & 71{,}2~s \\
+    \texttt{gemma4-e2b}  & 43{,}8~s & 29{,}9~s & 26{,}7~s & 82{,}8~s \\
+    \texttt{bielik-4.5b} & 94{,}0~s & 87{,}9~s & 86{,}6~s & 160{,}8~s \\
+    \hline
+  \end{tabular}
+\end{table}
+
+Dla obu modeli Gemma Q4\_0 i~Q4\_K\_M różnią się o~ułamek sekundy.
+Q8\_0 jest wyraźnie wolniejszy, lecz nie w~sposób, jakiego oczekiwano
+po samej kwantyzacji dekodowania: różnica nie układa się proporcjonalnie
+do precyzji wag. Wariant Q2\_K wypada gorzej niż Q4 mimo najmniejszego
+pliku GGUF; anomalię tę omówiono w~sekcji~\ref{subsubsec:anomalie}.
+
+Poszukiwanie przyczyny rozpoczęto od analizy literatury o~inferencji
+transformerów oraz dokumentacji silnika Ollamy. Pope et al.\ \cite{Pope2022}
+wprowadzili rozróżnienie dwóch faz: \emph{prefill} (równoległe
+przetworzenie całego promptu i~zbudowanie pamięci kluczy i~wartości,
+KV-cache) oraz \emph{decode} (autoregresyjne generowanie kolejnych
+tokenów). Czas do pierwszego tokenu (TTFT) jest zdominowany przez
+prefill, natomiast kwantyzacja wag wpływa przede wszystkim na fazę
+dekodowania, ograniczoną przepustowością pamięci \cite{Kim2023SqueezeLLM}.
+Kwon et al.\ \cite{Kwon2023PagedAttention} pokazali, że KV-cache jest
+kluczową strukturą serwowania LLM: jej ponowne użycie pozwala pominąć
+ponowne liczenie prefillu, o~ile prefiks promptu pozostaje identyczny.
+W~Ollamie model jest z~RAM usuwany po okresie bezczynności; parametr
+\texttt{keep\_alive} (domyślnie 5~minut) steruje czasem rezydencji
+\cite{OllamaAPI}. Silnik llama.cpp, na którym opiera się Ollama,
+udostępnia analogiczny mechanizm ponownego użycia prefiksu KV
+(\texttt{cache\_prompt}).
+
+Z~tego wynika, że pierwszy protokół pomiarowy był de facto stanem
+\emph{cold}: przy każdym zapytaniu --- lub po wyładowaniu modelu ---
+urządzenie wykonywało pełny prefill od zera. Metryka E2E była więc
+sumą długiego TTFT i~krótkiej generacji,
+$\mathrm{E2E} = \mathrm{TTFT} + \mathrm{generation\_ms}$,
+a~różnice Q4/Q8 ginęły w~budżecie prefillu.
+
+Rysunek~\ref{fig:cold_dekompozycja_e2e} pokazuje dekompozycję E2E
+w~protokole cold-cache ($n\approx 100$ per komórka model$\times$wariant).
+Wysokości słupków to mediany modelu log-normalnego $e^{\hat\mu}$.
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.95\textwidth]{cold_03_dekompozycja_e2e.png}
-  \caption{Dekompozycja E2E na TTFT i~\emph{generation\_ms} (cold cache).
-           Mediany modelu LN $e^{\hat\mu}$, $n\approx 100$. Prefill dominuje
-           budżet czasu.}
+  \caption{Dekompozycja E2E na TTFT i~\emph{generation\_ms} (cold cache,
+           stan diagnostyczny). Mediany modelu LN $e^{\hat\mu}$,
+           $n\approx 100$. Prefill dominuje budżet czasu.}
   \label{fig:cold_dekompozycja_e2e}
 \end{figure}
+
+Na wykresie widać, że TTFT stanowi większość budżetu czasu i~prawie
+nie zależy od wariantu kwantyzacji Q4. Dla \texttt{gemma3-4b/Q4\_K\_M}
+mediana LN wynosi ok.~31{,}3~s TTFT przy 5{,}8~s generacji i~37{,}9~s E2E
+--- prefill to ok.~83\% całkowitego opóźnienia. Warianty Q4\_0 i~Q4\_K\_M
+mają TTFT 33{,}0~s oraz 31{,}3~s, a~generację 5{,}0~s oraz 5{,}8~s;
+różnica kwantyzacji jest rzędu sekundy przy trzydziestosekundowym
+prefillu. Wariant Q8\_0 ma TTFT ok.~61{,}3~s, co wynika z~większego
+pliku GGUF przy zimnym ładowaniu wag do RAM, a~nie z~wolniejszego
+dekodowania.
+
+Taki rozkład jest konsekwencją architektury Raspberry~Pi~5.
+Urządzenie nie dysponuje GPU przeznaczonym do inferencji LLM ---
+całość obliczeń wykonuje CPU ARM Cortex-A76. Oficjalna dokumentacja
+procesora BCM2712 podaje 32-bitowy interfejs LPDDR4X o~przepustowości
+do 17~GB/s \cite{RaspberryPiBCM2712}. Prefill wymaga jednorazowego
+przetworzenia całego promptu i~zbudowania KV-cache \cite{Pope2022};
+przy zimnym starcie dodatkowo stronicuje wagi z~dysku do RAM
+(\texttt{mmap} pliku GGUF). Faza dekodowania, w~której przy każdym
+tokenie trzeba ponownie odczytać wagi z~pamięci \cite{Kim2023SqueezeLLM},
+stanowi w~tym protokole zaledwie ok.~13--15\% E2E, więc zysk z~niższej
+precyzji bitowej pozostaje niewidoczny.
+
+Aby wyizolować czas generacji, zastosowano protokół \emph{warm-cache}:
+stały \emph{system\_prompt}, \texttt{keep\_alive=30m},
+\texttt{streaming=True} oraz
+\emph{generation\_ms} $= \mathrm{e2e\_ms} - \mathrm{ttft\_ms}$
+per rekord. Model i~KV-cache pozostają wówczas w~RAM między zapytaniami,
+a~prefill ogranicza się do nowego sufiksu. Zysk zależy jednak od
+konstrukcji promptu: KV-cache jest trafiany tylko wtedy, gdy tokeny
+od początku wiadomości są identyczne. Szerszy opis tego mechanizmu
+oraz wynikającej z~niego architektury promptu zawarto w~sekcji
+\ref{subsec:prefix_caching} (Prompt engineering i~prefix caching).
+
+Rysunek~\ref{fig:dekompozycja_e2e} pokazuje tę samą dekompozycję
+po przejściu na protokół warm-cache.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\textwidth]{03_dekompozycja_e2e.png}
+  \caption{Dekompozycja E2E na TTFT i~\emph{generation\_ms} (warm cache,
+           protokół izolujący generację). Wysokości słupków to mediany
+           modelu log-normalnego $e^{\hat\mu}$ ($n\approx 100$).
+           Kwantyzacja wpływa głównie na czas generacji.}
+  \label{fig:dekompozycja_e2e}
+\end{figure}
+
+Zmiana protokołu daje czytelną poprawę. Dla \texttt{gemma3-4b/Q4\_K\_M}
+TTFT spada z~ok.~31{,}3~s do ok.~2{,}44~s (redukcja rzędu 92\%),
+a~E2E z~ok.~37{,}9~s do ok.~9{,}0~s. Udział generacji w~E2E rośnie
+z~ok.~15\% do ok.~71\%, więc kwantyzacja przestaje być maskowana
+przez prefill: Q4\_K\_M osiąga 6{,}42~s generacji wobec 9{,}66~s
+dla Q8\_0, czyli przyspieszenie $1{,}50\times$. Dalsza analiza
+czasów generacji --- model log-normalny i~zestawienie speedupów ---
+jest przedmiotem kolejnych podrozdziałów.
 
 \subsubsection{Model log-normalny dla czasów generacji}
 
