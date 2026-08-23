@@ -52,10 +52,10 @@ asystenta głosowego na CPU-only realnym.
 
 Po piąte, połączenie powyższych dźwigni prowadzi do konkretnej, rekomendowanej
 konfiguracji produkcyjnej: \texttt{gemma3:4b} z~kwantyzacją Q4\_K\_M
-i~\emph{prefix cachingiem}. Osiąga ona E2E na poziomie ok.~8{,}3~s przy
-wskaźniku halucynacji 1{,}17\% --- czternastokrotnie niższym niż druga
-najlepsza opcja (16{,}5\%), przy czym różnice są istotne statystycznie
-(rozłączne przedziały ufności~95\%, tabela~\ref{tab:wyniki_finalne}).
+i~\emph{prefix cachingiem}. Osiąga ona E2E na poziomie ok.~9~s
+(tabela~\ref{tab:rekomendacja_produkcyjna}) przy wskaźniku halucynacji
+1{,}17\% --- czternastokrotnie niższym niż druga najlepsza opcja (16{,}5\%,
+tabela~\ref{tab:wyniki_finalne}).
 
 \subsection{Ocena prototypu względem założeń}
 
@@ -80,8 +80,8 @@ zasobach --- oceniono względem trzech założeń przyjętych we wstępie:
 \begin{itemize}
   \item \textbf{Krótki czas odpowiedzi:} założenie spełnione. Dzięki kwantyzacji
         Q4\_K\_M oraz utrzymaniu gorącego stanu modelu w~RAM (\emph{prefix
-        caching}) osiągnięto E2E na poziomie ok.~8{,}3~s (TTFT ok.~2{,}4~s,
-        generacja ok.~5{,}9~s) --- wartość akceptowalną dla asystenta głosowego,
+        caching}) osiągnięto E2E na poziomie ok.~9~s (TTFT ok.~2{,}4~s,
+        generacja ok.~6{,}4~s) --- wartość akceptowalną dla asystenta głosowego,
         zwłaszcza w~połączeniu ze strumieniowaniem odpowiedzi i~równoległą
         syntezą mowy.
   \item \textbf{Ograniczenie halucynacji:} założenie spełnione częściowo.
@@ -105,33 +105,48 @@ bezpośredni eksperyment cold~vs~warm. Ponadto halucynacje w~kategoriach
 żaden z~badanych mechanizmów (strojenie hiperparametrów, kwantyzację, \emph{prefix
 caching}), co wyznacza naturalny kierunek dalszych prac.
 
-\subsection{Perspektywy dalszego rozwoju}
+\subsection{Plan rozwoju}
+\label{subsec:plan_rozwoju}
 
 Wyniki przeprowadzonych badań wyznaczają kilka naturalnych kierunków dalszego
-rozwoju.
+rozwoju, z~których najważniejszy dotyczy wag modelu, a~nie kolejnego strojenia
+inferencji.
 
-Najważniejszym z~nich jest \textbf{fine-tuning modelu docelowego}. Ponieważ
-halucynacje w~kategoriach \texttt{missing\_data} i~\texttt{stale\_data} są
-własnością wag modelu, a~nie konfiguracji inferencji, jedyną skuteczną metodą
-ich redukcji jest modyfikacja wag. Zaplanowany eksperyment (sekcja~\ref{subsec:finetuning_plan})
-zakłada dostrojenie metodą LoRA za pomocą biblioteki \texttt{mlx-lm} na~MacBooku~M4,
-na zbiorze ok.~400~przykładów w~formacie \texttt{messages}, pokrywających
-wszystkie kategorie zachowań docelowych. Pozwoli to zweryfikować hipotezę, czy
-model dostrojony --- bez jawnych reguł w~prompcie systemowym --- przewyższa
-model bazowy z~regułami na najtrudniejszych scenariuszach.
+Analiza Optuny pokazała, że wariancję \emph{composite score} tłumaczy niemal
+w~całości flaga halucynacji, podczas gdy \emph{nonhall\_score} pozostaje
+w~wąskim przedziale niezależnie od dobranych hiperparametrów. Kwantyzacja
+przyspiesza generację, lecz nie zmienia semantyki odpowiedzi, a~\emph{prefix
+caching} skraca TTFT, nie wpływając na to, czy model zmyśla fakty przy
+brakujących lub nieaktualnych odczytach. Halucynacje w~kategoriach
+\texttt{missing\_data} i~\texttt{stale\_data} są zatem własnością wag, a~nie
+konfiguracji uruchomieniowej. Jedyną dźwignią, która może je ograniczyć,
+pozostaje dostrojenie modelu na przykładach docelowego zachowania.
 
-Drugim kierunkiem jest \textbf{domknięcie zastrzeżenia metodologicznego}
-dotyczącego redukcji TTFT: przeprowadzenie bezpośredniego eksperymentu cold~vs~warm
-dla identycznego promptu produkcyjnego, który pozwoliłby precyzyjnie skwantyfikować
-zysk z~\emph{prefix cachingu} bez porównywania różnych protokołów pomiarowych.
+Planowany etap zakłada fine-tuning rekomendowanego \texttt{gemma3:4b} metodą
+LoRA, zrealizowany biblioteką \texttt{mlx-lm} na komputerze MacBook~M4
+z~układem Apple Silicon. Zbiór treningowy ma liczyć ok.~400~przykładów
+w~formacie \texttt{messages} (role \texttt{system}, \texttt{user}
+i~\texttt{assistant}) i~pokrywać kategorie złotego zbioru testowego:
+\texttt{factual\_status}, \texttt{missing\_data}, \texttt{conflicting\_data},
+\texttt{stale\_data} oraz \texttt{paraphrase}. Celem eksperymentu jest
+sprawdzenie, czy model dostrojony --- pozbawiony jawnych reguł w~prompcie
+systemowym --- przewyższa model bazowy wyposażony w~te reguły właśnie
+na najtrudniejszych scenariuszach, w~których instrukcje promptowe okazały
+się mieć wpływ marginalny. Takie badanie wykracza poza ramy czasowe
+niniejszej pracy; obecne wyniki stanowią dla niego empiryczne uzasadnienie.
 
-Trzecim jest \textbf{wdrożenie produkcyjne} w~docelowym środowisku Ośrodka
-Wypoczynkowego Politechniki Warszawskiej w~Wildze (projekt Wilga~MiLL). Wymaga
-ono zastąpienia symulacji odczytów z~pliku CSV strumieniem danych na żywo
-(\emph{live feed}) z~fizycznych czujników oraz integracji z~istniejącą
-infrastrukturą IoT.
+Osobnym kierunkiem jest domknięcie zastrzeżenia metodologicznego dotyczącego
+redukcji TTFT. Bezpośredni eksperyment \emph{cold} kontra \emph{warm cache}
+dla identycznego promptu produkcyjnego pozwoliłby precyzyjnie skwantyfikować
+zysk z~\emph{prefix cachingu} bez porównywania dwóch różnych protokołów
+pomiarowych.
 
-Dalsze kierunki obejmują rozszerzenie puli badanych modeli i~wariantów
+Wdrożenie w~docelowym środowisku Ośrodka Wypoczynkowego Politechniki
+Warszawskiej w~Wildze (projekt Wilga~MiLL) wymaga natomiast zastąpienia
+symulacji odczytów z~pliku CSV strumieniem danych na żywo (\emph{live feed})
+z~fizycznych czujników oraz integracji z~istniejącą infrastrukturą IoT.
+
+Dalsze prace mogą objąć rozszerzenie puli badanych modeli i~wariantów
 kwantyzacji, ewaluację prototypu z~udziałem docelowych użytkowników
-nietechnicznych (badania użyteczności) oraz dalszą optymalizację warstw STT/TTS
-i~VAD pod kątem opóźnienia i~naturalności interakcji głosowej.
+nietechnicznych oraz optymalizację warstw STT, TTS i~VAD pod kątem
+opóźnienia i~naturalności interakcji głosowej.

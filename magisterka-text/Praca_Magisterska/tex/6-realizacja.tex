@@ -1,88 +1,361 @@
 \newpage
 \section{Realizacja prototypu}
+\label{sec:realizacja}
 
-\subsection{Symulacja środowiska sensorycznego i generowanie kontekstu}
+\subsection{Architektura prototypu}
+\label{subsec:architektura_prototypu}
 
-Podstawą działania systemu Wilga jest zbiór danych pomiarowych pochodzących z sieci czujników internetu rzeczy (ang. \textit{Internet of Things}, IoT) obiektu rekreacyjnego, zarejestrowany w okresie od 31.10.2025 do 27.01.2026 i przechowywany w pliku CSV (\texttt{db\_sampler/sensor\_data\_2025-10-31\_2026-01-27.csv}). Plik ten zawiera około 146 kolumn, obejmujących odczyty temperatury, wilgotności względnej, stężenia CO$_2$, natężenia oświetlenia, chwilowego poboru mocy elektrycznej, skumulowanego zużycia energii, obecności osób oraz stanu kontaktronów drzwi i okien. Zakres tematyczny zbioru odzwierciedla zatem zarówno warunki mikroklimatyczne panujące w poszczególnych pomieszczeniach, jak i parametry eksploatacyjne całego obiektu, dzięki czemu możliwe stało się odwzorowanie realistycznego środowiska pracy asystenta. Do budowy kontekstu wykorzystano podzbiór około 35 zmiennych związanych z komfortem oraz stanem technicznym pomieszczeń. Kolumny zduplikowane lub wysoce skorelowane pominięto, aby ograniczyć rozmiar przekazywanego kontekstu i zmniejszyć ryzyko halucynacji małego modelu językowego SLM Uczeń. Świadome zawężenie liczby zmiennych podyktowane było również ograniczoną pojemnością okna kontekstu modelu działającego na urządzeniu brzegowym, dla którego nadmiarowe dane wejściowe stanowiłyby obciążenie bez wartości informacyjnej.
-
-Wobec braku strumienia danych na żywo (ang. \textit{live feed}) z czujników na etapie prototypu, Context Service realizuje symulację upływu czasu poprzez sekwencyjne przetwarzanie kolejnych wierszy pliku CSV. Każde wywołanie cyklu odświeżania przesuwa wewnętrzny kursor o jeden wiersz, odpowiadający kolejnemu pomiarowi w historii obiektu; po osiągnięciu ostatniego wiersza symulacja powraca do początku pliku, co zapewnia ciągłość działania systemu. Kolejne wiersze traktowane są jako następujące po sobie chwile czasowe, co pozwoliło odtworzyć naturalną dynamikę zmian parametrów, w tym stopniowe narastanie i opadanie temperatury czy cykliczne zmiany obecności osób. Rozwiązanie takie umożliwiło przetestowanie logiki analizy oraz generowania kontekstu bez konieczności podłączania fizycznych czujników i odtwarzania rzeczywistych warunków pomiarowych, a jednocześnie zachowało wierność charakterystyce danych pochodzących z rzeczywistej instalacji.
-
-W każdym cyklu Context Service przekazuje bieżący zrzut stanu (ang. \textit{snapshot}) do modelu LLM Nauczyciela, działającego lokalnie na serwerze. Nauczyciel realizuje wielopunktową analizę, której nie sposób wyrazić prostymi regułami: wyznacza korelacje między pomieszczeniami, wykrywa anomalie na tle danych historycznych oraz ocenia trend parametrów komfortu. Zadania te wymagają uogólniania oraz wnioskowania na podstawie wielu współzależnych zmiennych, co czyni je naturalnym obszarem zastosowania dużego modelu językowego. Logika czysto deterministyczna, taka jak wykrycie przekroczenia zadanego progu temperatury czy odczyt wartości boolowskiej kontaktronu, pozostaje natomiast w warstwie języka Python i nie jest delegowana do modelu, co pozwala zarezerwować jego zasoby wyłącznie dla zadań wymagających wnioskowania oraz uniknąć niepewności wynikającej z probabilistycznej natury generacji tam, gdzie oczekiwany jest jednoznaczny wynik.
-
-Odpowiedź Nauczyciela jest walidowana za pomocą struktury Pydantic złożonej z czterech pól:
-
-\begin{itemize}
-    \item \texttt{EnergyInsight} --- analiza zużycia energii oraz anomalii poboru mocy;
-    \item \texttt{ComfortInsight} --- ocena komfortu obejmująca temperaturę, wilgotność oraz natężenie oświetlenia;
-    \item \texttt{PatternInsight} --- wzorce czasowe oraz korelacje między pomieszczeniami;
-    \item \texttt{soft\_summary} --- dwuzdaniowe podsumowanie stanu obiektu sformułowane w języku polskim.
-\end{itemize}
-
-Tak ustrukturyzowany wynik jest następnie formatowany przez Context Service do postaci \textit{system promptu} i udostępniany za pośrednictwem endpointu \texttt{GET /api/context}. Wymóg strukturyzowanego wyniku, w miejsce swobodnej narracji, wprowadzono celowo: zapewnia on przewidywalną formę kontekstu przekazywanego Uczniowi oraz redukuje zmienność stylów odpowiedzi generowanych przez Nauczyciela, co przekłada się na stabilność całego potoku przetwarzania. Rozdzielenie analizy na cztery odrębne pola ułatwiło ponadto niezależne testowanie oraz walidację poszczególnych aspektów oceny stanu obiektu, a także selektywne włączanie wybranych fragmentów do finalnego promptu w zależności od charakteru zadanego pytania.
-
-Ogólną organizację systemu oraz kierunki przepływu danych między poszczególnymi komponentami przedstawiono na rysunku~\ref{fig:architektura}.
+Zaimplementowany finalny system asystenta głosowego Wilga odpowiada oparty jest na koncepcji
+z~rozdziału~\ref{subsec:przeplyw}, składają się na nią: aplikacja użytkownika, serwer orkiestrujący
+oraz węzeł brzegowy Raspberry~Pi~5. Schemat wdrożenia przedstawiono
+na rysunku~\ref{fig:architektura}, zastosowano ten sam podział na trzy
+środowiska co na rysunku schematu testowego~\ref{fig:schemat}, w przypadku prezentowanej wdrożeniowej wersji asystenta przedstawiono architekturą wraz z~konkretnymi procesami i~kierunkami przepływu danych.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{src/img/system-schemat.png}
-    \caption{Diagram architektury systemu Wilga --- przepływ danych między komponentami.}
+    \caption{Architektura prototypu Wilga --- przepływ danych od mikrofonu
+             do głośnika. Linia przerywana oznacza asynchroniczną współpracę
+             Context Engine z~modelem Nauczyciela.}
     \label{fig:architektura}
 \end{figure}
 
-\subsection{Implementacja asynchronicznej komunikacji między komponentami}
+Architektura produkcyjna jest pokrewna, lecz nie tożsama z~układem
+benchmarkowym opisamym w sekcji~\ref{subsec:metodologia} (rysunek~\ref{fig:testy_arch}).
+Wspólnym elementem pozostaje gówny aktor: węzeł brzegowy, na który składają się serwer Ollama oraz mały model
+językowy (SLM) Uczeń na Raspberry~Pi~5. Względem architektury testowej największe zmiany poczyniono w warstwie serwerowej.
+W~pomiarach orkiestratorem był skrypt testowy oraz złoty zbiór pytań (\emph{golden set}); w~prototypie tę rolę przejmuje pełny łańcuch
+głosowy (aktywowany przez użytkownika) oraz Context Engine (działający asynchronicznie). Konfiguracja modelu Ucznia
+pochodzi z~rekomendacji badawczej (tabela~\ref{tab:rekomendacja_produkcyjna}), wybrano \texttt{gemma3:4b}, kwantyzacja Q4\_K\_M, \texttt{keep\_alive=30m}
+oraz stały prefiks promptu pod \emph{prefix caching}.
 
-System zrealizowano jako złożenie dwóch niezależnych, asynchronicznych cykli działania. Pierwszy z nich, odpowiadający za odświeżanie kontekstu, realizuje Context Service z interwałem określonym parametrem \texttt{CONTEXT\_REFRESH\_INTERVAL}: w każdym przebiegu serwis odpytuje Nauczyciela, waliduje otrzymaną odpowiedź i aktualizuje wewnętrzną reprezentację system promptu, bez udziału użytkownika. Cykl ten działa w tle w sposób ciągły, niezależnie od tego, czy w danej chwili obsługiwane jest jakiekolwiek zapytanie. Drugi cykl, obsługujący zapytanie głosowe, uruchamiany jest zdarzeniem zewnętrznym w postaci transkrypcji mowy i synchronicznie pobiera aktualny kontekst z pamięci podręcznej (ang. \textit{cache}) Context Service. Dzięki takiemu rozdzieleniu czas odpowiedzi Ucznia nie zależy od czasu generacji Nauczyciela --- kosztowna obliczeniowo analiza sensoryczna jest zawsze przygotowana z wyprzedzeniem i gotowa do natychmiastowego użycia. Rozwiązanie to stanowi kluczowy element architektury Teacher--Student, ponieważ pozwala oddzielić powolne, lecz rzadko wykonywane wnioskowanie kontekstowe od częstej i wrażliwej na opóźnienia obsługi interakcji z użytkownikiem.
+Przepływ danych wywołany zapytaniem użytkownika przebiega wzdłuż strzałek
+na rysunku~\ref{fig:architektura}. Mikrofon przez przeglądarkę rejestruje
+sygnał audio. Detekcja aktywności mowy (ang.\ \emph{Voice Activity Detection},
+VAD) w~aplikacji kończy nagranie po chwili ciszy; start następuje po wywołaniu frazy
+\textit{,,Hej Wilguś''} albo po kliknięciu postaci na ekranie. Segment audio trafia
+na serwer, gdzie transkrypcja (ang.\ \emph{Speech-to-Text}, STT) zamienia
+mowę na tekst. Context Engine dokłada do pytania stały prefiks reguł, dane z~czujników oraz bieżący kontekst wygenerowany przez Nauczyciela. Tak złożone żądanie trafia  na urządzenie brzegowe Raspberry~Pi, do modelu SLM Ucznia. Wygenerowana odpowiedź wraca na serwer, synteza
+mowy (ang.\ \emph{Text-to-Speech}, TTS) produkuje audio, które jest transportowane do aplikacji użytkownika gdzie głośnik
+ odtwarza odpowiedź.
 
-Whisper Backend przed skierowaniem zapytania do Ucznia pobiera system prompt przez wywołanie \texttt{GET http://127.0.0.1:8001/api/context}. Przykładową odpowiedź endpointu przedstawiono poniżej:
+Context Engine nie stoi na ścieżce krytycznej zapytania. Pracuje w~dwóch
+cyklach. Cykl asynchroniczny, sterowany interwałem
+\texttt{CONTEXT\_REFRESH\_INTERVAL} (domyślnie 300~s), w~tle przesuwa
+kursor po historycznych odczytach IoT (rekordy bazy danych), odpytuje Nauczyciela i buduje konktest na bieżąco. Całość odvywa się przy pomocy skryptów w~języku Python w sposób cykliczny i asynchroniczny, niezależnie od użytkownika. Cykl synchroniczny skupia się jedynie na doklejeniu aktualnego kontekstu do pytania użytkownika oraz przed przesłaniem zapytania do modelu Ucznia. Czas odpowiedzi asystenta nie zależy więc od czasu generacji
+Nauczyciela. Linia przerywana na schemacie oznacza właśnie tę asynchroniczną,
+dwukierunkową współpracę silnika kontekstu modelem LLM.
+
+Podział maszyn jest zgodny z~założeniem o~odciążeniu urządzenia brzegowego.
+Komputer Mac (serwer) wykonuje transkrypcję, syntezę mowy, budowanie
+kontekstu i~inferencję Nauczyciela. Raspberry~Pi udostępnia wyłącznie
+interfejs Ollama API, tak aby całe zasoby były przeznaczone dla modelu SLM.
+
+\subsection{Elementy systemu i wykorzystane technologie}
+\label{subsec:elementy}
+
+W poniższej sekcji skupiono się na kolejnych elementach systemu, ich roli oraz wykorzystanych technologiach.
+
+\subsubsection{Aplikacja użytkownika}
+
+Interfejs użytkownika zrealizowano w~React z~wykorzystaniem bundlera Vite, za część stylistyczną odpowiada Tailwind CSS.
+Aplikacja nie transkrybuje mowy ani nie syntetyzuje odpowiedzi. Jej zadania ograniczają się do:
+nagrania audio, wyświetlania historię rozmowy oraz wizualinych zmian stanów, takich jak animacja maskotki Wilguś. Wiele wyborów technologicznych dotyczących tej warstwy wynikało z dziedziczenia koncepcji architektonicznych poprzedniej aplikacji Wilga MiLL, co 
+opisano w rozdziale~\ref{sec:koncepcja}.
+
+System obsługuje dwa tryby aktywacji. W~trybie głosowym przeglądarka
+nasłuchuje frazy kluczowej \textit{,,Hej Wilguś''} przez Web Speech API
+(Chrome/Edge). Rozpoznawane są także warianty transkrypcji (obsługa błędów)
+(\texttt{hej wilga}, \texttt{hej wilgo}, \texttt{hey wilgus} i~podobne);
+po wykreyciu frazy kluczowej frontend obcina frazę z~początku wypowiedzi, żeby asystent
+nie traktował jej jako pytania, jest ona jedynie wywołaniem systemu. W~trybie ręcznym nagranie startowane jest poprzez
+kliknięciem postaci Wilgusia na ekranie. W~obu przypadkach ten sam odcinek jest nagrywany i przesyłany do sytemu.
+
+Mechanizm znalezienia momentu, w którym nagrywanie zostaje wstrzymane oparto o~prosty detektor poziomu głośności badany przez mikrofon urządzenia końcowego, a~nie o~model Silero omawiany w~przeglądzie
+literatury. Utrzymanie się poniżej wyznaczonego progu przez 1{,}5~s kończy nagranie;
+dolny i~górny limit trwania to 2{,}5~s oraz 20~s. Rozwiązanie jest
+lżejsze niż neuronowy VAD i w testach wykazało, że dobrze sprawdza się do naturalnego ucięcia wypowiedzi
+bez instalowania dodatkowego modelu na serwerze. Wyznaczenie końca nagrania nie jest zatem adaptacyjne. Poziom, który uznano za ciszę jest stałą w kodzie aplikacji. W domkach w Wildze, które znajdują się w lesie panują dość dobre warunki akustyczne. Niemniej dobrym kierunkiem rozwoju byłoby adaptacyjne ustawienie progu lub filtrowanie częstotliwości zbieranych prze mikrofon.
+
+Układ interfejsu użytkownika jest dwukolumnowy. Po lewej stronie znajduje się karta \emph{Rozmowa} gdzie wyświetlany jest czat, po prawej widneje postać Wilgusia (animowana w zależności od statusu). Aplikacja na starcie po uruchomieniu, przechodzi przez fazę przygotowawczą. Zanim użytkownik może zadać pierwsze pytanie, model Uczeń musi być przygotowany, fazę tę nazwano rozgrzeaniem. Faza ta ma zapobiegać wydłużonej odpowiedzi na pierwsze zapytanie, które
+trafioby w~\emph{cold cache} i~czas do pierwszego tokenu (TTFT) sięgałby rzędu dziesiątek sekund, tal jak wykazano to w ~sekcji~\ref{subsec:kwantyzacja}.
+Pętla \texttt{StudentKeepWarm} razem z~\texttt{keep\_alive} ustawionym
+na 30~min powodują, że zarówno wagi modelu jak i~KV-cache stałego prefiksu ciągle znajduje się w~RAM
+urządzenia brzegowego co zapobiega jego ładowania do pamięci podręcznej w momencie pojawienia się zapytania użytkownika.
+Frontend odpytuje endpoinu \texttt{GET /api/health}, który w czasie rozgrzewania modelu zwraca status \texttt{warming} co blokuje interakcję użytkownika.
+Widok prezentowany userowi podczas fazy przygotowawczej przedstawiono na rysunku~\ref{fig:app_warmup}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{src/img/app_warmup.png}
+    \caption{Faza rozgrzewania modelu Ucznia. Interfejs informuje
+             o~ładowaniu wag i~KV-cache, zanim możliwe będzie zapytanie
+             bez kosztu \emph{cold cache}.}
+    \label{fig:app_warmup}
+\end{figure}
+
+Po zakończeniu procesu rozgrzewania modelu Ucznia użytkownikowi prezentowany jest delikatnie inny widok-  ekran startowy
+(rysunek~\ref{fig:app_start}): powitanie, subtelne instrukcje jak rozpocząć rozmowę (raza startowa lub kliknięcie Wilgusia). Dodatkow aby zachęcić do interakcji postać Wilgusi pulsuje pokazując swoją gotowość do interakcji. Widok startowy nadal trzyma omówiony powyżej dwukolumnowy układ.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{src/img/app_start.png}
+    \caption{Ekran startowy po rozgrzaniu modelu: karta historii rozmowy
+             oraz interaktywna postać Wilguś.}
+    \label{fig:app_start}
+\end{figure}
+
+Wilguś widoczny w prawej kolumnie prezentowanych widoków nie jest statyczną ilustracją. Tablica \texttt{WILGUS\_BY\_STATUS}
+przypisuje fazom czy statusom aplikacji osobną grafikę dynamiczną i~podpis, dzięki czemu postać
+sygnalizuje, co system właśnie robi. Grafiki zapisane w formacie GIF wprowadzają element ruchu, który podnosi zaangażowanie użytkownika. Klatki faz używanych w~prototypie
+zestawiono na rysunku~\ref{fig:wilgus_fazy}. Postać Wilgusia została zaprojektowana przez Julię Nazarską, studentkę wydziały Architektury Politechniki Warszawskiej.
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}[t]{0.18\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{src/img/wilgus/wilgus_neutral.png}\\[0.4em]
+        {\small gotowy / \textit{hej wilguś}}
+    \end{minipage}
+    \hfill
+    \begin{minipage}[t]{0.18\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{src/img/wilgus/wilgus_macha.png}\\[0.4em]
+        {\small słucham dalej}
+    \end{minipage}
+    \hfill
+    \begin{minipage}[t]{0.18\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{src/img/wilgus/wilgus_zdziwiony.png}\\[0.4em]
+        {\small nagrywam}
+    \end{minipage}
+    \hfill
+    \begin{minipage}[t]{0.18\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{src/img/wilgus/wilgus_pomysl.png}\\[0.4em]
+        {\small myślę}
+    \end{minipage}
+    \hfill
+    \begin{minipage}[t]{0.18\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{src/img/wilgus/wilgus_gada.png}\\[0.4em]
+        {\small mówię}
+    \end{minipage}
+    \caption{Fazy Wilgusia w~interfejsie, zgodne z~łańcuchem
+             mikrofon--STT--Uczeń--TTS. Sprite'y niewpięte w~mapę stanów
+             (reakcje na temperaturę, otwarte okno itd.) nie wchodzą
+             do prototypu.}
+    \label{fig:wilgus_fazy}
+\end{figure}
+
+W~trakcie dialogu ten sam układ wypełnia się historią. Bańki asystenta
+są białe, wypowiedzi użytkownika --- niebieskie i~wyrównane do prawej.
+Nad postacią powtarza się aktualna replika, a~status \textit{,,Mówię\ldots''}
+oznacza fazę TTS (rysunek~\ref{fig:app_rozmowa}). Przykład z~zrzutu
+pokazuje domknięcie łańcucha: pytanie o~temperaturę w~salonie zostaje
+zmapowane na pomieszczenie z~kontekstu (\emph{Duży pokój}) i~cytuje
+wartość z~faktów czujnikowych, a~nie z~wiedzy modelu.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{src/img/app_rozmowa.png}
+    \caption{Widok w~trakcie rozmowy (faza syntezy mowy). Historia po lewej,
+             bieżąca wypowiedź i~status TTS przy postaci po prawej.}
+    \label{fig:app_rozmowa}
+\end{figure}
+
+\subsubsection{Transkrypcja mowy (STT)}
+
+Whisper Backend to usługa FastAPI na porcie \texttt{8000}. Transkrypcję
+realizuje biblioteka \texttt{faster-whisper} \cite{Radford2023} ---
+implementacja Whisper oparta na CTranslate2. W~prototypie ustawiono
+wariant \texttt{small}, urządzenie \texttt{cpu}, typ obliczeń \texttt{int8}
+oraz język \texttt{pl}. Filtr VAD po stronie Whisper jest wyłączony
+(\texttt{WHISPER\_VAD\_FILTER=false}), ponieważ na krótkich polskich
+nagraniach z~frazą budzącą bywał zbyt agresywny i~zwracał pusty tekst.
+
+Nagranie trafia jako \texttt{POST /api/transcribe} (\texttt{multipart/form-data},
+pole \texttt{file}). Odpowiedź:
+
+\begin{verbatim}
+{"text": "jaka jest temperatura w salonie",
+ "language": "pl",
+ "duration_seconds": 2.4}
+\end{verbatim}
+
+Gotowość stosu, w~tym stan Ucznia, zgłasza endpoint zdrowia
+\texttt{/api/health} --- m.in.\ flagi \texttt{student\_warm}
+i~\texttt{student\_status}. Limit rozmiaru nagrania wynosi 25~MB;
+zbyt krótkie pliki są odrzucane, żeby nie puszczać w~łańcuch pustych
+klipów po przypadkowym kliknięciu.
+
+\subsubsection{Context Engine}
+\label{subsec:kontekst}
+
+Context Engine jest zestawem skryptów Python opakowanych w~FastAPI
+na porcie \texttt{8001}. Ponieważ instalacja IoT w~Wildze nie dostarczała
+strumienia na żywo w~trakcie prac, serwis czyta historyczny CSV
+z~\texttt{db\_sampler} (okres 31.10.2025--27.01.2026, 147~kolumn
+wraz z~polem czasu).
+Każdy cykl odświeżania przesuwa kursor o~jeden wiersz (w~danych jest to
+krok ok.~5~minut); po ostatnim wierszu symulacja wraca na początek.
+Do promptu nie idzie pełna szerokość tabeli --- parser zostawia metryki
+komfortu i~stanu technicznego (temperatura, wilgotność, obecność,
+kontaktrony, oświetlenie, moc, energia, VOC) i~pomija m.in.\ baterie
+oraz jakość łącza, żeby nie rozdymać okna kontekstu Ucznia.
+
+Fakty dla Ucznia składa warstwa deterministyczna: z~wiersza CSV powstaje
+punktowy \emph{snapshot} z~etykietami pomieszczeń (łazienka, duży pokój,
+mały pokój, korytarz). Model językowy nie liczy progów ani stanów
+boolowskich. Nauczyciel dostaje ten sam snapshot wyłącznie po to,
+by zgłosić anomalie. Jeśli wywołanie się nie uda, fakty i~tak zostają
+opublikowane --- serwis nie blokuje asystenta na awarii większego modelu.
+
+Kontekst ma dwa bufory. \emph{Published} jest przypięty do bieżącej
+rozmowy; \emph{staging} odświeża się w~tle. Nowa sesja
+(\texttt{POST /api/session/new} po stronie Whisper Backendu) woła
+\texttt{POST /api/context/advance} i~przestawia publikowany snapshot
+na nowszy, bez zmiany stałego prefiksu reguł. Dzięki temu KV-cache
+prefiksu na Pi pozostaje ważny między turami.
+
+Whisper Backend pobiera bieżący kontekst przez
+\texttt{GET /api/context}. Przykładowa odpowiedź:
 
 \begin{verbatim}
 {
   "status": "ready",
   "source_timestamp": "2025-11-01T12:00:00Z",
-  "insight": "Temperatura w salonie wynosi 21,4 st. C...",
-  "system_prompt": "Jestes asystentem glosowym..."
+  "static_prefix": "Jesteś Wilguś — ...",
+  "dynamic_context": "Stan mieszkania na ... UTC: ...",
+  "system_prompt": "Jesteś Wilguś — ...\n\nStan mieszkania...",
+  "insight": "Okno w korytarzu otwarte."
 }
 \end{verbatim}
 
-Gdy Context Service nie zakończył jeszcze pierwszego cyklu odświeżania, endpoint zwraca stan \texttt{"status": "pending"}. Whisper Backend obsługuje ten przypadek i nie kieruje zapytania do Ucznia do czasu uzyskania kompletnego, gotowego kontekstu, co zapobiega generowaniu odpowiedzi na podstawie niepełnych danych. Sytuacja taka występuje w praktyce jedynie w krótkim okresie bezpośrednio po uruchomieniu systemu; po zakończeniu pierwszego cyklu kontekst pozostaje stale dostępny, a jego kolejne aktualizacje odbywają się w sposób niewidoczny dla warstwy obsługującej zapytania.
+Pole \texttt{static\_prefix} (persona i~reguły) jest niezmienne między
+zapytaniami. Pole \texttt{dynamic\_context} to fakty plus opcjonalna
+sekcja Findings. Pole \texttt{system\_prompt} jest złożeniem obu części,
+zostawionym dla zgodności wstecznej. Przy \texttt{status: pending}
+(pierwszy cykl po starcie) backend nie czeka w~nieskończoność:
+używa zapasowego prefiksu wbudowanego w~Whisper Backend i~może
+odpowiadać bez faktów, zamiast blokować cały interfejs.
 
-Zapytanie do Ucznia wysyłane jest jako żądanie HTTP POST do interfejsu Ollama API, działającego na urządzeniu Raspberry Pi pod adresem \texttt{http://192.168.1.173:11434/api/chat}. Żądanie zawiera system prompt pozyskany z Context Service oraz transkrypcję pytania przekazaną jako wiadomość użytkownika. Parametry generacji, takie jak temperatura, rozmiar okna kontekstu oraz maksymalna długość odpowiedzi, konfigurowane są indywidualnie dla każdego żądania (ang. \textit{per-request}) w polu \texttt{options}, bez konieczności restartu serwera Ollama. Odpowiedź Ucznia jest strumieniowana do frontendu w formacie NDJSON za pośrednictwem endpointu \texttt{POST /api/chat}:
+\subsubsection{LLM Nauczyciel}
+
+Nauczyciel działa lokalnie na Macu przez Ollamę
+(adres w~\texttt{TEACHER\_OLLAMA\_URL}, model \texttt{qwen2.5}),
+z~\texttt{keep\_alive} równym 30~min i~bez strumieniowania. Zadanie jest wąskie:
+nie streszczać całego domu, tylko wskazać odchylenia (skrajne temperatury,
+otwarte okna, nietypowa obecność, wysokie VOC, sprzeczne odczyty).
+Gdy nic nie zasługuje na uwagę, model ma zwrócić dokładnie jedną linię
+\texttt{BRAK\_ANOMALII}; serwis traktuje to jako brak findings
+i~nie dokleja sekcji do promptu Ucznia.
+
+Żądanie do Ollamy ma postać:
 
 \begin{verbatim}
-{"type":"chunk","content":"W salonie"}
-{"type":"chunk","content":" jest teraz 21,4 stopni."}
+{
+  "model": "qwen2.5",
+  "messages": [
+    {"role": "system", "content": "Jesteś analitykiem IoT smart-home..."},
+    {"role": "user",   "content": "Snapshot czujników z ..."}
+  ],
+  "stream": false,
+  "keep_alive": "30m"
+}
+\end{verbatim}
+
+\subsubsection{SLM Uczeń}
+
+Uczeń to \texttt{gemma3:4b} na Raspberry~Pi (Ollama API w~sieci lokalnej),
+w~konfiguracji z~tabeli~\ref{tab:rekomendacja_produkcyjna}. Zapytanie
+z~frontendu to \texttt{POST /api/chat}:
+
+\begin{verbatim}
+{
+  "message": "Jaka jest temperatura w salonie?",
+  "history": [
+    {"role": "user", "content": "Siema, powiedz mi coś o sobie"},
+    {"role": "assistant", "content": "Jestem Wilguś, gospodarz domku..."}
+  ]
+}
+\end{verbatim}
+
+Backend dokłada co najwyżej ostatnie sześć tur historii
+(\texttt{CHAT\_HISTORY\_MAX\_MESSAGES}). Payload do Ollamy rozdziela
+role tak, by prefiks systemowy był bitowo stały: najpierw
+\texttt{role: system} ze \texttt{static\_prefix}, potem --- jeśli są ---
+fakty domu jako osobna wiadomość użytkownika, następnie historia
+i~bieżące pytanie. Włączenie \texttt{stream: true} oraz
+\texttt{keep\_alive} z~konfiguracji pozwala strumieniować tokeny
+i~utrzymać ciepły cache. Odpowiedź do przeglądarki idzie jako NDJSON:
+
+\begin{verbatim}
+{"type":"chunk","content":"Temperatura w Dużym pokoju"}
+{"type":"chunk","content":" wynosi 23,0 °C."}
 {"type":"done"}
 \end{verbatim}
 
-Strumieniowanie (ang. \textit{streaming}) umożliwia wyświetlanie kolejnych słów odpowiedzi na bieżąco, bez oczekiwania na zakończenie całej generacji, co ma istotne znaczenie przy opóźnieniu (ang. \textit{latency}) rzędu kilku sekund charakterystycznym dla inferencji wykonywanej wyłącznie na procesorze (ang. \textit{CPU-only}) urządzenia Raspberry Pi.
+Zdarzenie \texttt{error} pojawia się przy przekroczeniu limitu czasu
+Ollamy (120~s, HTTP~504 na etapie połączenia) albo przy błędzie sieci.
+Gdy Context Service nie odpowiada, Uczeń dostaje wyłącznie zapasowy
+prefiks persony i~odmawia cytowania liczb spoza faktów --- zgodnie
+z~regułami promptu.
 
-Wszystkie operacje wykraczające poza samą inferencję modelu SLM Uczeń --- transkrypcja mowy na tekst, budowanie kontekstu, walidacja struktur Pydantic, synteza mowy oraz obsługa połączeń WebSocket --- wykonywane są na serwerze lokalnym, którym jest komputer Mac. Raspberry Pi udostępnia wyłącznie interfejs Ollama API i nie realizuje żadnych dodatkowych obliczeń w trakcie generacji odpowiedzi. Przyjęty podział odpowiedzialności jest spójny z założeniem, że urządzenie brzegowe pełni rolę wyspecjalizowanego węzła inferencyjnego, natomiast całość logiki orkiestracji pozostaje po stronie serwera. Takie rozłożenie obciążenia umożliwiło pomiar metryk wydajności --- opóźnienia, liczby tokenów na sekundę, zużycia pamięci RAM oraz temperatury procesora --- odzwierciedlających warunki produkcyjne, bez zniekształcenia wyników przez równolegle działające procesy. W efekcie zmierzone wartości można przypisać wyłącznie samej inferencji modelu, co zwiększa wiarygodność późniejszej analizy wydajnościowej.
+\subsubsection{Synteza mowy (TTS)}
 
-Wszystkie adresy sieciowe, nazwy modeli oraz interwały czasowe konfigurowane są przy użyciu plików \texttt{.env}, bez modyfikacji kodu źródłowego:
+Frontend tnie napływające zdania i~kolejkuje
+\texttt{POST /api/tts} z~ciałem \texttt{\{"text": "..."\}}.
+Odpowiedź to \texttt{audio/mpeg}. Syntezę realizuje \texttt{edge-tts}
+\cite{EdgeTTS} głosem \texttt{pl-PL-ZofiaNeural}; wymaga to sieci
+wychodzącej do usług Microsoft. Limit długości wynosi 1000~znaków.
+Takie podejście daje akceptowalną jakość polszczyzny bez trenowania
+własnego TTS, przy czym sam Uczeń nadal liczy się wyłącznie lokalnie.
+
+\subsubsection{Konfiguracja}
+
+Adresy, nazwy modeli i~interwały siedzą w~plikach \texttt{.env},
+bez zmian w~kodzie:
 
 \begin{itemize}
-    \item \texttt{context\_service/.env}: \texttt{TEACHER\_OLLAMA\_URL}, \texttt{TEACHER\_OLLAMA\_MODEL}, \texttt{CONTEXT\_REFRESH\_INTERVAL}, \texttt{SENSOR\_DATA\_PATH};
-    \item \texttt{whisper-proj/backend/.env}: \texttt{OLLAMA\_URL}, \texttt{OLLAMA\_MODEL}, \texttt{CONTEXT\_SERVICE\_URL}, \texttt{WHISPER\_MODEL\_SIZE}.
+    \item \texttt{context\_service/.env}: \texttt{TEACHER\_OLLAMA\_URL},
+          \texttt{TEACHER\_OLLAMA\_MODEL}, \texttt{CONTEXT\_REFRESH\_INTERVAL},
+          \texttt{SENSOR\_DATA\_PATH};
+    \item \texttt{whisper-proj/backend/.env}: \texttt{OLLAMA\_URL},
+          \texttt{OLLAMA\_MODEL}, \texttt{CONTEXT\_SERVICE\_URL},
+          \texttt{WHISPER\_MODEL\_SIZE}, \texttt{OLLAMA\_KEEP\_ALIVE},
+          \texttt{TTS\_VOICE}.
 \end{itemize}
 
-\subsection{Pipeline przetwarzania mowy}
+\subsection{Testy rozwiązania}
+\label{subsec:testy_prototypu}
 
-Pierwszym etapem przetwarzania sygnału głosowego jest detekcja aktywności mowy (ang. \textit{Voice Activity Detection}, VAD), zrealizowana z użyciem modelu Silero VAD \cite{SileroVAD}. VAD przetwarza ciągły strumień audio z mikrofonu w fragmentach o długości około 30~ms, klasyfikując każdy z nich jako mowę lub ciszę. Segmenty ciszy są odrzucane przed przekazaniem audio do modułu transkrypcji, co eliminuje fałszywe transkrypcje z szumów tła i skraca czas przetwarzania przez ograniczenie wejścia STT wyłącznie do fragmentów zawierających mowę. Frontend realizuje automatyczne zatrzymanie nagrywania po wykryciu ciszy o określonym czasie trwania, zapewniając naturalne zakończenie wypowiedzi bez interwencji użytkownika.
+Pełny stos uruchamia skrypt \texttt{start.sh}: lokalna Ollama Nauczyciela,
+Context Service, Whisper Backend i~serwer deweloperski frontendu.
+Przed startem skrypt sprawdza \texttt{/api/tags} obu instancji Ollamy,
+obecność modeli oraz środowiska Python; Nauczyciela rozgrzewa od razu,
+Ucznia --- pętla keep-warm w~backendzie, ta sama która steruje
+rysunkiem~\ref{fig:app_warmup}.
 
-System obsługuje dwa tryby aktywacji. W trybie głosowym użytkownik wypowiada frazę \textit{,,Hej Wilga''}, wykrywaną przez Web Speech API w przeglądarce; po jej rozpoznaniu interfejs automatycznie rozpoczyna nagrywanie. W trybie manualnym użytkownik aktywuje nagrywanie przyciskiem w interfejsie React. Oba tryby kierują nagrany sygnał audio do tego samego dalszego przetwarzania realizowanego przez Whisper Backend.
+Odporność na typowe awarie wbudowano w~ścieżkę żądania, a~nie w~osobny
+moduł. Brak pierwszego snapshotu zgłasza \texttt{status: pending};
+niedostępny Context Service spada na zapasowy prefiks; pad Nauczyciela
+zostawia fakty bez Findings; rozgrzewający się Uczeń wraca 503;
+przekroczenie czasu Ollamy --- 504. Interwał keep-warm (10~min) jest
+krótszy niż \texttt{keep\_alive} (30~min), żeby model nie wypadł
+z~pamięci między turami.
 
-Nagrany segment audio przesyłany jest do Whisper Backendu przez \texttt{POST /api/transcribe}. Transkrypcja (ang. \textit{Speech-to-Text}, STT) realizowana jest lokalnie biblioteką \texttt{faster-whisper} \cite{Radford2023} --- zoptymalizowaną implementacją modelu Whisper opartą na silniku CTranslate2, o niższym zużyciu pamięci i wyższym przepływie (ang. \textit{throughput}) niż referencyjna implementacja w PyTorch. Rozmiar modelu konfigurowany jest zmienną \texttt{WHISPER\_MODEL\_SIZE}; dla środowiska serwerowego zastosowano wariant \textit{medium}, zapewniający wysoką dokładność transkrypcji języka polskiego przy akceptowalnym czasie przetwarzania.
+Poprawność łańcucha sprawdzano ręcznie: uruchomienie aplikacji
+i~rozmowy głosowe oraz tekstowe, w~scenariuszach zbliżonych do złotego
+zbioru z~części badawczej --- pytanie o~stan (temperatura, oświetlenie),
+brak danych (oczekiwana odmowa zamiast halucynacji) oraz nieaktualny
+znacznik czasu. W~pracy tekstowej nie zamieszcza się nagrań sesji;
+zrzuty na rysunkach~\ref{fig:app_start}--\ref{fig:app_rozmowa} dokumentują
+układ i~przykładową turę, nie pełną ewaluację jakości.
 
-Uzyskany tekst transkrypcji przekazywany jest do \texttt{POST /api/chat}, który pobiera aktualny system prompt z Context Service, konstruuje kompletne zapytanie do SLM Ucznia i otwiera strumieniowe połączenie z Ollama API na Raspberry Pi. Wygenerowana odpowiedź tekstowa Ucznia przekazywana jest do modułu syntezy mowy (ang. \textit{Text-to-Speech}, TTS), który produkuje plik audio odtwarzany przez głośnik użytkownika. Syntezę zrealizowano biblioteką \texttt{edge-tts} \cite{EdgeTTS}, korzystającą z neuronowych głosów Microsoft Edge; domyślnie używany jest polski głos \texttt{pl-PL-ZofiaNeural}. Takie podejście zapewnia akceptowalną jakość i niskie opóźnienie syntezy przy małym nakładzie integracyjnym, bez lokalnego trenowania własnego modelu TTS.
-
-Interfejs frontendowy, zrealizowany w technologii React z bundlerem Vite, wyświetla historię rozmowy w czasie rzeczywistym, wizualizując kolejne fragmenty odpowiedzi Ucznia natychmiast po ich wygenerowaniu dzięki strumieniowaniu NDJSON. Maskotka Wilguś --- postać zainspirowana ptakiem wilgą naturalnie występującym na terenie obiektu --- pełni rolę wizualnego wskaźnika stanu systemu: oczekiwania, aktywnego nasłuchiwania oraz generacji odpowiedzi.
-
-\subsection{Weryfikacja łańcucha komunikacyjnego}
-
-Weryfikację poprawności kompletnego łańcucha komunikacyjnego przeprowadzono przez manualne testy integracyjne po uruchomieniu pełnego stosu skryptem \texttt{start.sh}. Skrypt kolejno uruchamia lokalną instancję Ollamy z modelem LLM Nauczyciela, Context Service, Whisper Backend oraz serwer deweloperski frontendu, weryfikując dostępność każdego komponentu przed przejściem do uruchomienia kolejnego.
-
-Poprawność każdego komponentu weryfikowano przez bezpośrednie odpytanie endpointów. Dla Context Service sprawdzano gotowość przez \texttt{GET /api/health} oraz poprawność struktury i zawartości system promptu przez \texttt{GET /api/context}. Dla Whisper Backendu weryfikowano transkrypcję przez \texttt{POST /api/transcribe} z nagraniem testowym, a następnie kompletny łańcuch przez \texttt{POST /api/chat} z pytaniem tekstowym --- sprawdzając poprawność strumieniowania NDJSON oraz zawartości odpowiedzi SLM Ucznia. Weryfikowano też poprawność przekazania kontekstu: odpowiedź Ucznia na pytanie o aktualną temperaturę powinna być spójna z wartością z ostatniego snapshotu CSV przekazanego przez Context Service.
-
-Testy przeprowadzono dla reprezentatywnych scenariuszy odpowiadających typom ze zbioru złotego standardu benchmarku: pytanie o aktualny stan (temperatura, oświetlenie), pytanie przy brakujących danych (sprawdzenie, czy Uczeń odmawia odpowiedzi zamiast halucynować) oraz pytanie przy nieaktualnym znaczniku czasu. W każdym scenariuszu weryfikowano poprawność merytoryczną odpowiedzi oraz kompletność przepływu danych --- od transkrypcji wejściowej, przez kontekst przekazany przez LLM Nauczyciela, aż po syntezę mowy na wyjściu.
-
-Wszystkie komponenty funkcjonowały zgodnie z założoną specyfikacją; łańcuch od transkrypcji audio do odpowiedzi tekstowej SLM Ucznia działał poprawnie dla wszystkich testowanych scenariuszy. Zidentyfikowane konfiguracyjne zależności między komponentami --- kolejność uruchamiania, dostępność modeli Ollama oraz ścieżki do pliku CSV --- udokumentowano w pliku \texttt{README.md} repozytorium i obsłużono mechanizmem walidacji w skrypcie \texttt{start.sh}.
+Czasy odpowiedzi w~prototypie mieszczą się w~rzędzie wielkości
+zmierzonych dla konfiguracji produkcyjnej: przy \emph{warm cache}
+mediana E2E modelu LN wynosi ok.~9~s
+(tabela~\ref{tab:rekomendacja_produkcyjna}). Bez rozgrzania i~stałego
+prefiksu ten sam węzeł wraca do opóźnień cold-cache omówionych
+w~sekcji~\ref{subsec:kwantyzacja}.
