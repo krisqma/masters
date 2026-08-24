@@ -141,41 +141,27 @@ zestawiono na rysunku~\ref{fig:wilgus_fazy}. Postać Wilgusia została zaprojekt
         \includegraphics[width=\linewidth]{src/img/wilgus/wilgus_gada.png}\\[0.4em]
         {\small mówię}
     \end{minipage}
-    \caption{Fazy Wilgusia w~interfejsie, zgodne z~łańcuchem
-             mikrofon--STT--Uczeń--TTS. Sprite'y niewpięte w~mapę stanów
-             (reakcje na temperaturę, otwarte okno itd.) nie wchodzą
-             do prototypu.}
+    \caption{Stany Wilgusia w aplikacji użytkownika.}
     \label{fig:wilgus_fazy}
 \end{figure}
 
-W~trakcie dialogu ten sam układ wypełnia się historią. Bańki asystenta
-są białe, wypowiedzi użytkownika --- niebieskie i~wyrównane do prawej.
-Nad postacią powtarza się aktualna replika, a~status \textit{,,Mówię\ldots''}
-oznacza fazę TTS (rysunek~\ref{fig:app_rozmowa}). Przykład z~zrzutu
-pokazuje domknięcie łańcucha: pytanie o~temperaturę w~salonie zostaje
-zmapowane na pomieszczenie z~kontekstu (\emph{Duży pokój}) i~cytuje
-wartość z~faktów czujnikowych, a~nie z~wiedzy modelu.
+Podczas konwersacji lewa kolumna wypełnia się wiadomościami użytkownika i odpowiedziami asystenta. Całość ma przypominać dobrze znany interfejs chatu, przez co korzystanie z aplikacji jest intuicyjne. Na rysunku~\ref{fig:app_rozmowa} przedstawiono przykładowy widok w trakcie prowadzenia rozmowy.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{src/img/app_rozmowa.png}
-    \caption{Widok w~trakcie rozmowy (faza syntezy mowy). Historia po lewej,
-             bieżąca wypowiedź i~status TTS przy postaci po prawej.}
+    \caption{Widok aplikacji w trakcie prowadzenia rozmowy.}
     \label{fig:app_rozmowa}
 \end{figure}
 
 \subsubsection{Transkrypcja mowy (STT)}
 
-Whisper Backend to usługa FastAPI na porcie \texttt{8000}. Transkrypcję
-realizuje biblioteka \texttt{faster-whisper} \cite{Radford2023} ---
-implementacja Whisper oparta na CTranslate2. W~prototypie ustawiono
-wariant \texttt{small}, urządzenie \texttt{cpu}, typ obliczeń \texttt{int8}
-oraz język \texttt{pl}. Filtr VAD po stronie Whisper jest wyłączony
-(\texttt{WHISPER\_VAD\_FILTER=false}), ponieważ na krótkich polskich
-nagraniach z~frazą budzącą bywał zbyt agresywny i~zwracał pusty tekst.
+Za transkrypcję mowy, czyli element procesu nazwany STT na schemacie architektonicznym (rysunek~\ref{fig:architektura}) odpowiada blok roboczo nazwany Whisper Backend. Jest to usługa stworzono w oparciu o bliblitekę języka Python FastAPI oraz otwartoźródłowego modelu Whisper. Sercem moduły jest transkrypcja, którą realizuje biblioteka \texttt{faster-whisper} \cite{Radford2023}. W prezentowanym rozwiązaniu zdecydowano się implementować wa
+wariant \texttt{small}, oczywiście w konfiguracji wskazano język polski (\texttt{pl}). Filtr VAD po stronie Whisper jest wyłączony
+(\texttt{WHISPER\_VAD\_FILTER=false}), ponieważ w systemie istnieje własny detektor aktywności, widoczny na schemacie architektornicznym pod nazwa \texttt{VAD}.
 
-Nagranie trafia jako \texttt{POST /api/transcribe} (\texttt{multipart/form-data},
-pole \texttt{file}). Odpowiedź:
+Nagranie zebrane przez aplikację użytkownika zostaje wysłane do Whisper Backendu poprzez żądanie HTTP \texttt{POST /api/transcribe},
+pole \texttt{file}) zawiera plik nagrania (mechanizm znany z formularzy aplikacji webowych \texttt{multipart/form-data})). Odpowiedź zwracana jest w formacie JSON, jej przykład przedstawiono poniżej:
 
 \begin{verbatim}
 {"text": "jaka jest temperatura w salonie",
@@ -183,11 +169,8 @@ pole \texttt{file}). Odpowiedź:
  "duration_seconds": 2.4}
 \end{verbatim}
 
-Gotowość stosu, w~tym stan Ucznia, zgłasza endpoint zdrowia
-\texttt{/api/health} --- m.in.\ flagi \texttt{student\_warm}
-i~\texttt{student\_status}. Limit rozmiaru nagrania wynosi 25~MB;
-zbyt krótkie pliki są odrzucane, żeby nie puszczać w~łańcuch pustych
-klipów po przypadkowym kliknięciu.
+Moduł STT został zabezpieczony przez błedami. Serwis odrzuca nagrania większe niż 25~MB oraz niemal puste pliki
+(poniżej ok.\ 1{,}5~kB), brak reakcji na szum. 
 
 \subsubsection{Context Engine}
 \label{subsec:kontekst}
