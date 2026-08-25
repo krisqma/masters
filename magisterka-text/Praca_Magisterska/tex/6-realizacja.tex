@@ -175,34 +175,22 @@ Moduł STT został zabezpieczony przez błedami. Serwis odrzuca nagrania większ
 \subsubsection{Context Engine}
 \label{subsec:kontekst}
 
-Context Engine jest zestawem skryptów Python opakowanych w~FastAPI
-na porcie \texttt{8001}. Ponieważ instalacja IoT w~Wildze nie dostarczała
-strumienia na żywo w~trakcie prac, serwis czyta historyczny CSV
-z~\texttt{db\_sampler} (okres 31.10.2025--27.01.2026, 147~kolumn
-wraz z~polem czasu).
-Każdy cykl odświeżania przesuwa kursor o~jeden wiersz (w~danych jest to
-krok ok.~5~minut); po ostatnim wierszu symulacja wraca na początek.
-Do promptu nie idzie pełna szerokość tabeli --- parser zostawia metryki
-komfortu i~stanu technicznego (temperatura, wilgotność, obecność,
-kontaktrony, oświetlenie, moc, energia, VOC) i~pomija m.in.\ baterie
-oraz jakość łącza, żeby nie rozdymać okna kontekstu Ucznia.
+Kolejnym elementem systemu jestContext Engine, zestaw skryptów Python również wystawiających styk poprzez bibliotekę FastAPI. Ze względu na brak danych spływających z Wilgi na żywo w~trakcie prac nad opisywaną pracą magisterką, zdecydowano zaprojektować iminację. Serwis czyta plik CSV będących eksportem z realbychrekordów zebranych z bazy danych w czasie gdy system funkcjonował poprawnie (okres 31.10.2025--27.01.2026).
+Każdy cykl odświeżania przesuwa moment w czasie o~jeden wiersz, czyli 5 minut, ponieważ co tyle były agregowane dane w bazie danych.
+Do promptu nie idzie pełna szerokość tabeli, skrypt pomija metryki mówiące o stanie technicznym np. poziomu baterii czy jakości łącza nieistotne z punktu widzenia użytkownika.
 
-Fakty dla Ucznia składa warstwa deterministyczna: z~wiersza CSV powstaje
-punktowy \emph{snapshot} z~etykietami pomieszczeń (łazienka, duży pokój,
-mały pokój, korytarz). Model językowy nie liczy progów ani stanów
-boolowskich. Nauczyciel dostaje ten sam snapshot wyłącznie po to,
-by zgłosić anomalie. Jeśli wywołanie się nie uda, fakty i~tak zostają
-opublikowane --- serwis nie blokuje asystenta na awarii większego modelu.
+Fakty dla Ucznia składane są przez skrypt deterministycznie: z~wiersza CSV powstaje
+tak zwany \emph{snapshot} z etykietami oznaczającymi pomieszczenia (łazienka, duży pokój,
+mały pokój, korytarz).Ten sam \emph{snapshot} dostarczony jest do Nauczyciela aby on przygotował analizę anomalii. Działanie obu wątków jest niezależne to znaczy, jeśli nauczyciel nie odpowie context engine będzie dostarczał snapshot do Ucznia bez względu na niedostępność większego modelu.
 
-Kontekst ma dwa bufory. \emph{Published} jest przypięty do bieżącej
-rozmowy; \emph{staging} odświeża się w~tle. Nowa sesja
-(\texttt{POST /api/session/new} po stronie Whisper Backendu) woła
-\texttt{POST /api/context/advance} i~przestawia publikowany snapshot
-na nowszy, bez zmiany stałego prefiksu reguł. Dzięki temu KV-cache
-prefiksu na Pi pozostaje ważny między turami.
+Kontekst ma dwa bufory, w których przechowany jest snapshot kontekstu: \emph{Published} przypięty do bieżącej
+rozmowy, \emph{staging} odświeża się w~tle, zapewniając że snapshot będzie możliwie aktualny w momencie rozpoczęcia nowej rozmowy. Wywołanie nowej sesji
+(\texttt{POST /api/session/new} po stronie Whisper Backendu) powoduje wywołanie metody \texttt{POST /api/context/advance} i~przestawia publikowany snapshot na nowszy.
+Niezmienny oczywiście pozostaje prefiks, snapshot jest częscią sufiksu, dzięki temu KV-cache
+ na Pi pozostaje ważny między turami.
 
-Whisper Backend pobiera bieżący kontekst przez
-\texttt{GET /api/context}. Przykładowa odpowiedź:
+Whisper Backend pobiera bieżący kontekst przez endpoint
+\texttt{GET /api/context}. Przykładowa odpowiedź serwera:
 
 \begin{verbatim}
 {
@@ -210,31 +198,24 @@ Whisper Backend pobiera bieżący kontekst przez
   "source_timestamp": "2025-11-01T12:00:00Z",
   "static_prefix": "Jesteś Wilguś — ...",
   "dynamic_context": "Stan mieszkania na ... UTC: ...",
-  "system_prompt": "Jesteś Wilguś — ...\n\nStan mieszkania...",
-  "insight": "Okno w korytarzu otwarte."
+  "insight": "Okno w korytarzu otwarte.",
+  "system_prompt": "Jesteś Wilguś — ...\n\nStan mieszkania...".
 }
 \end{verbatim}
 
-Pole \texttt{static\_prefix} (persona i~reguły) jest niezmienne między
-zapytaniami. Pole \texttt{dynamic\_context} to fakty plus opcjonalna
-sekcja Findings. Pole \texttt{system\_prompt} jest złożeniem obu części,
-zostawionym dla zgodności wstecznej. Przy \texttt{status: pending}
-(pierwszy cykl po starcie) backend nie czeka w~nieskończoność:
-używa zapasowego prefiksu wbudowanego w~Whisper Backend i~może
-odpowiadać bez faktów, zamiast blokować cały interfejs.
+Pole \texttt{static\_prefix} (niezmienna część promptu) składa się z osoby, persony Wilgusia oraz reguł, których powinien przestrzegać. Pole \texttt{dynamic\_context} to surowe dane maszynowo opakowane w etykiety przez Context Engine. Ostatnią składową jest sekcja Findings, zawiera ona analizę anomalii wykonaną przez Nauczyciela. Pole \texttt{system\_prompt} jest złożeniem obu części, stałej oraz zmiennej.
+De facto to z niego korzystać będzie Uczeń dalej w łańcuchu przetwarzania. 
 
 \subsubsection{LLM Nauczyciel}
 
-Nauczyciel działa lokalnie na Macu przez Ollamę
-(adres w~\texttt{TEACHER\_OLLAMA\_URL}, model \texttt{qwen2.5}),
-z~\texttt{keep\_alive} równym 30~min i~bez strumieniowania. Zadanie jest wąskie:
-nie streszczać całego domu, tylko wskazać odchylenia (skrajne temperatury,
-otwarte okna, nietypowa obecność, wysokie VOC, sprzeczne odczyty).
-Gdy nic nie zasługuje na uwagę, model ma zwrócić dokładnie jedną linię
-\texttt{BRAK\_ANOMALII}; serwis traktuje to jako brak findings
-i~nie dokleja sekcji do promptu Ucznia.
+Model LLM zwany Nauczycielem ze względu na jego rolę w systemie działa lokalnie na komputerze Macbook. Dzięki aplikacji Ollama uruchamianie modeli i udostępnianie API w sieci lokalnej jest bardzo proste.
+Jako model Nauczyciela wybrano Qwen2.5 w konfiguracji 4b, nie poczyniono żadnych prac optymalizacyjnych. Ten węzeł jest jedynie symulacją zewnętrznego systemu analitycznego. Zadanie jest wąskie:
+nie streszczać stanu całego domu wczasowego, wskazać odchylenia od normy (skrajne temperatury,
+otwarte okna, nietypowa obecność, sprzeczne odczyty).
+Gdy nic nie zostanie sklasyfikowane jako anomalia, model ma zwrócić dokładnie jedną linię
+\texttt{BRAK\_ANOMALII}, serwis (Context Engine) traktuje to jako sygnał do pominięcia pola Findings podczas składania System Promptu Ucznia.
 
-Żądanie do Ollamy ma postać:
+Żądanie przyjmowane przez API Ollamy ma postać zwaną \emph{OpenAI-compatible}, schemat wzorowany na API zaproponowanym przez firmę OpenAI, przykładowa wiadomość to:
 
 \begin{verbatim}
 {
@@ -250,9 +231,8 @@ i~nie dokleja sekcji do promptu Ucznia.
 
 \subsubsection{SLM Uczeń}
 
-Uczeń to \texttt{gemma3:4b} na Raspberry~Pi (Ollama API w~sieci lokalnej),
-w~konfiguracji z~tabeli~\ref{tab:rekomendacja_produkcyjna}. Zapytanie
-z~frontendu to \texttt{POST /api/chat}:
+Modelem ucznia jest \texttt{gemma3:4b} uruchomiony naurządzeniu brzegowym Raspberry~Pi (Ollama udostępnia API w sieci loklanje, tak samo jak Nauczyciel),
+Model SLM uruchomiony jest w konfiguracji przedstawioną w tabeli~\ref{tab:rekomendacja_produkcyjna}. Zapytania modelu LLM Ucznia wykonywane śą przez skrupty Python (Context Engine), przykładowa wiadomość ma format:
 
 \begin{verbatim}
 {
@@ -264,14 +244,9 @@ z~frontendu to \texttt{POST /api/chat}:
 }
 \end{verbatim}
 
-Backend dokłada co najwyżej ostatnie sześć tur historii
-(\texttt{CHAT\_HISTORY\_MAX\_MESSAGES}). Payload do Ollamy rozdziela
-role tak, by prefiks systemowy był bitowo stały: najpierw
-\texttt{role: system} ze \texttt{static\_prefix}, potem --- jeśli są ---
-fakty domu jako osobna wiadomość użytkownika, następnie historia
-i~bieżące pytanie. Włączenie \texttt{stream: true} oraz
-\texttt{keep\_alive} z~konfiguracji pozwala strumieniować tokeny
-i~utrzymać ciepły cache. Odpowiedź do przeglądarki idzie jako NDJSON:
+Context Engine wzbogacany jest o poprzednie pary pytanie-odpowiedź, maksymalnie 3 ostatnie pary. Payload budowany przez Context Engine dba o to by prefiks systemowy był bitowo stały, co opisano w podrozdziale powyżej. Ten zabieg w połączeniu z konfiguracja Ollama (włączenie \texttt{stream: true} oraz
+\texttt{keep\_alive=true}) pozwala strumieniować tokeny
+i~utrzymać ciepły cache. Odpowiedź zwracana przez model podzielona jest na \texttt{chunki}, czyli kawałki wiadomości, dzięki takiemu poddziałowi możliwe jest przetwarzanie na dźwięk zdania po zdaniu, co zmniejsza czas TTFT. Przykładowa odpowiedź modelu w formacie NDJSON:
 
 \begin{verbatim}
 {"type":"chunk","content":"Temperatura w Dużym pokoju"}
@@ -279,39 +254,23 @@ i~utrzymać ciepły cache. Odpowiedź do przeglądarki idzie jako NDJSON:
 {"type":"done"}
 \end{verbatim}
 
-Zdarzenie \texttt{error} pojawia się przy przekroczeniu limitu czasu
-Ollamy (120~s, HTTP~504 na etapie połączenia) albo przy błędzie sieci.
-Gdy Context Service nie odpowiada, Uczeń dostaje wyłącznie zapasowy
-prefiks persony i~odmawia cytowania liczb spoza faktów --- zgodnie
-z~regułami promptu.
+
+Węzeł Ucznia posiada podstawową obsługę błędów. Zdarzenie \texttt{error} zwracane jest przez system gdy przekroczone zostanie 120~s opóźnienia albo przy błędzie sieciowym (brak połączenia z Uczniem).
+Gdy Context Service nie odpowiada asystent głosowy odpowiada wyłącznie bazując na stałym prefiksie systemowym. Instrukcje przekazują Uczniowi zakaz zmyślania informacji, odpowiada on jedynie na pytania dotyczące jego tożsamości i zasad zachowania.
 
 \subsubsection{Synteza mowy (TTS)}
 
-Frontend tnie napływające zdania i~kolejkuje
-\texttt{POST /api/tts} z~ciałem \texttt{\{"text": "..."\}}.
-Odpowiedź to \texttt{audio/mpeg}. Syntezę realizuje \texttt{edge-tts}
-\cite{EdgeTTS} głosem \texttt{pl-PL-ZofiaNeural}; wymaga to sieci
-wychodzącej do usług Microsoft. Limit długości wynosi 1000~znaków.
-Takie podejście daje akceptowalną jakość polszczyzny bez trenowania
-własnego TTS, przy czym sam Uczeń nadal liczy się wyłącznie lokalnie.
+Moduł TTS przyjmuje dane w postaci \texttt{chunk'ów} zwracanych przez Ucznia. Zdaniowe ragmenty są kolejkowane i przetwarzane w sposób sekwencyjny przez bibliotekę \texttt{edge-tts}. Odpowiedź generowana jest w formacie \texttt{audio/mpeg}. Biblioteka oferuje dwa głosy w języku polskim, męski oraz żeński. Zdecydwoano się skorzystać z głosu żeńskiego \texttt{pl-PL-ZofiaNeural}, ze względu na charakter postaci Wilgusia. Idealny byłby głos dziecięcy, jednak takie zakazane są w Unii Europejskiej \cite{EUAIAct2024}.
+Pakiet \texttt{edge-tts} jest darmowy i~otwartoźródłowy, jednak synteza mowy realizowana jest przez chmurowy serwis (Microsoft Azure). Jest to niekorzystne projektowo, ponieważ wymaga dostępu do sieci internetowej. Wada ta powoduje, że rozsądnym kierunkiem rozwoju byłoby zastąpienie tej warstwy lokalnym modelem TTS, niezależnym od internetu.
 
 \subsubsection{Konfiguracja}
 
-Adresy, nazwy modeli i~interwały siedzą w~plikach \texttt{.env},
-bez zmian w~kodzie:
-
-\begin{itemize}
-    \item \texttt{context\_service/.env}: \texttt{TEACHER\_OLLAMA\_URL},
-          \texttt{TEACHER\_OLLAMA\_MODEL}, \texttt{CONTEXT\_REFRESH\_INTERVAL},
-          \texttt{SENSOR\_DATA\_PATH};
-    \item \texttt{whisper-proj/backend/.env}: \texttt{OLLAMA\_URL},
-          \texttt{OLLAMA\_MODEL}, \texttt{CONTEXT\_SERVICE\_URL},
-          \texttt{WHISPER\_MODEL\_SIZE}, \texttt{OLLAMA\_KEEP\_ALIVE},
-          \texttt{TTS\_VOICE}.
-\end{itemize}
+Pełną konfigurację systemu przedstawiono w załączniku A. (do dopisania)
 
 \subsection{Testy rozwiązania}
 \label{subsec:testy_prototypu}
+
+\begin{comment}
 
 Pełny stos uruchamia skrypt \texttt{start.sh}: lokalna Ollama Nauczyciela,
 Context Service, Whisper Backend i~serwer deweloperski frontendu.
@@ -342,3 +301,5 @@ mediana E2E modelu LN wynosi ok.~9~s
 (tabela~\ref{tab:rekomendacja_produkcyjna}). Bez rozgrzania i~stałego
 prefiksu ten sam węzeł wraca do opóźnień cold-cache omówionych
 w~sekcji~\ref{subsec:kwantyzacja}.
+
+\end{comment}

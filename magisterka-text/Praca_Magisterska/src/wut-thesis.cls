@@ -150,6 +150,8 @@
 \usepackage{caption}
 \usepackage{tablefootnote}
 \usepackage{amsmath} % Do pracy z zaawansowanymi wzorami
+\usepackage{comment}
+
 
 \RequirePackage{hyperref}
 \hypersetup{
