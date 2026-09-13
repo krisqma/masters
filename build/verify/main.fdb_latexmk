@@ -1,0 +1,9 @@
+# Fdb version 4
+["pdflatex"] 1789308670.95994 "main.tex" "build/verify/main.pdf" "main" 1789308671.08517 2
+  "build/verify/main.aux" 1789308662.95943 32 3985256e7290058c681f74d7a3565a19 "pdflatex"
+  "main.tex" 0 -1 0 ""
+  (generated)
+  "build/verify/main.aux"
+  "build/verify/main.log"
+  "build/verify/main.pdf"
+  (rewritten before read)
