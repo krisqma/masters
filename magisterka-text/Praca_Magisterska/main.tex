@@ -42,14 +42,26 @@ Projekt i implementacja asystenta głosowego wykorzystującego lokalnie działaj
 % Streszczenie po polsku
 %--------------------------------------
 \cleardoublepage % Zaczynamy od nieparzystej strony
-\streszczenie Celem pracy było zwiększenie interaktywności wczasowiczów przebywających w domkach wypoczynkowych w Wildze poprzez wdrożenie lokalnego asystenta głosowego, umożliwiającego osobom nietechnicznym dostęp do informacji zbieranych przez czujniki IoT. Praca obejmuje zarówno część implementacyjną — zaprojektowanie i uruchomienie systemu opartego na architekturze dwumodelowej- jak i badawczą, polegającą na empirycznym doborze optymalnego modelu językowego oraz parametrów generacji dla środowiska o ograniczonych zasobach obliczeniowych. Pracę zakończono analizą wyników i sformułowaniem wniosków dotyczących działania modeli językowych na platformach klasy Raspberry Pi.
-\slowakluczowe asystent głosowy, large language model, smart home, inferencja lokalna, sprzęt o ograniczonych zasobach
+\streszczenie Celem pracy było zwiększenie interaktywności wczasowiczów przebywających w~domkach wypoczynkowych Ośrodka Wypoczynkowego Politechniki Warszawskiej w~Wildze. Realizowano to przez wdrożenie lokalnego asystenta głosowego, który umożliwia wczasowiczom dostęp do informacji zbieranych przez sieć czujników IoT. Asystent ma w~przystępny sposób tłumaczyć odczyty dotyczące warunków w~domku i~zużycia energii, bez konieczności korzystania z~interfejsu technicznego.
+
+Część implementacyjna polegała na zaprojektowaniu i~uruchomieniu kompletnego łańcucha interakcji głosowej. Obejmuje on detekcję mowy, transkrypcję, dynamiczne budowanie kontekstu z~danych IoT, lokalną generację odpowiedzi oraz syntezę mowy. System oparto na architekturze dwumodelowej. Większy model Nauczyciel asynchronicznie analizuje dane z~sieci czujników, a~mniejszy model Uczeń odpowiada na pytania użytkownika na urządzeniu brzegowym.
+
+Część badawcza polegała na empirycznym doborze małego modelu językowego oraz parametrów jego pracy na sprzęcie o~ograniczonych zasobach. Na Raspberry~Pi~5 porównano kilka modeli. Zbadano wpływ kwantyzacji wag, hiperparametrów generacji oraz konstrukcji promptu na jakość odpowiedzi w~języku polskim i~na czas ich uzyskania.
+
+Wykonana implementacja i~przeprowadzone testy na urządzeniu o~małych zasobach, jakim jest Raspberry~Pi~5, pozwoliły wykazać, że użyteczny asystent głosowy może działać lokalnie, bez wysyłania zapytań do chmury. Najlepsza zbadana konfiguracja, model \texttt{gemma3:4b} poddany kwantyzacji Q4\_K\_M, z~ponownym użyciem stałego prefiksu promptu, osiągnęła medianę czasu odpowiedzi (E2E, od zapytania do ostatniego tokenu) poniżej 10~s przy wskaźniku halucynacji 1{,}17\%. Wyniki pokazują, że o~jakości odpowiedzi decyduje przede wszystkim wybór modelu, a~skrócenie opóźnienia wymaga utrzymania modelu w~pamięci urządzenia i~obniżenia precyzji wag.
+\slowakluczowe asystent głosowy, LLM, IoT, smart home, inferencja lokalna
 %--------------------------------------
 % Streszczenie po angielsku
 %--------------------------------------
 \cleardoublepage
-\abstract  The aim of this project was to increase interactivity for holidaymakers staying in Wilga's holiday cottages by implementing a local voice assistant. This allows non-technical users to access information collected by IoT sensors. The project comprised an implementation component involving the design and deployment of a system based on a dual-model architecture, as well as a research component involving the empirical selection of optimal language models and generation parameters for environments with limited computational resources. The thesis concludes with an analysis of the results and conclusions regarding the performance of language models on Raspberry Pi-class platforms.
-\keywords  voice assistant, large language model, smart home, on-device inference, resource-constrained devices
+\abstract The aim of this thesis was to increase the interactivity of guests staying at the Warsaw University of Technology holiday cottages in Wilga. This was done by deploying a local voice assistant that gives guests access to information collected by an IoT sensor network. The assistant explains cottage conditions and energy use in everyday language, so there is no need for a technical interface.
+
+The implementation work designed and ran a complete voice interaction pipeline. It covers speech detection, transcription, dynamic context building from IoT data, local response generation, and speech synthesis. The system uses a dual-model architecture. A larger Teacher model analyses data from the sensor network in the background, and a smaller Student model answers the user on the edge device.
+
+The research work selected a small language model and its operating parameters empirically, on resource-constrained hardware. Several models were compared on a Raspberry~Pi~5. The study examined how weight quantization, generation hyperparameters, and prompt design affect the quality of answers in Polish and the time needed to produce them.
+
+The implementation and the tests on a low-resource device, the Raspberry~Pi~5, showed that a useful voice assistant can run locally, without sending queries to the cloud. The best configuration studied, the \texttt{gemma3:4b} model quantized to Q4\_K\_M, with reuse of a fixed prompt prefix, reached a median end-to-end response time, from query to last token, below 10~s, at a hallucination rate of 1.17\%. The results show that answer quality depends primarily on the choice of model, while reducing latency requires keeping the model in device memory and lowering the precision of its weights.
+\keywords voice assistant, LLM, IoT, smart home, on-device inference
 
 %--------------------------------------
 % Oświadczenie o autorstwie
@@ -101,13 +113,40 @@ Projekt i implementacja asystenta głosowego wykorzystującego lokalnie działaj
 % //AB
 \vspace{0.8cm}
 \acronymlist
+\acronym{AI}{sztuczna inteligencja (ang.\ \emph{Artificial Intelligence})}
+\acronym{API}{interfejs programowania aplikacji (ang.\ \emph{Application Programming Interface})}
+\acronym{ARM}{architektura procesorów o~zredukowanej liście rozkazów (ang.\ \emph{Advanced RISC Machine})}
+\acronym{CPU}{centralna jednostka obliczeniowa (ang.\ \emph{Central Processing Unit})}
+\acronym{CSV}{plik wartości rozdzielonych przecinkami (ang.\ \emph{Comma-Separated Values})}
+\acronym{E2E}{czas odpowiedzi od zapytania do wygenerowania ostatniego tokenu (ang.\ \emph{End-to-End})}
 \acronym{EiTI}{Wydział Elektroniki i Technik Informacyjnych}
+\acronym{GGUF}{format zapisu wag modelu językowego (ang.\ \emph{GPT-Generated Unified Format})}
+\acronym{GPTQ}{metoda kwantyzacji po trenowaniu wykorzystująca przybliżenie drugiego rzędu (ang.\ \emph{Generative Pre-trained Transformer Quantization})}
+\acronym{GPU}{układ graficzny (ang.\ \emph{Graphics Processing Unit})}
+\acronym{HTTP}{protokół przesyłania hipertekstu (ang.\ \emph{Hypertext Transfer Protocol})}
+\acronym{IoT}{Internet Rzeczy (ang.\ \emph{Internet of Things})}
+\acronym{JSON}{format zapisu i~wymiany danych (ang.\ \emph{JavaScript Object Notation})}
+\acronym{KV}{pary klucz--wartość (ang.\ \emph{key}--\emph{value}); w~pracy w~kontekście mechanizmu KV-cache}
+\acronym{LLM}{duży model językowy (ang.\ \emph{Large Language Model})}
+\acronym{LN}{rozkład log-normalny (ang.\ \emph{Log-Normal Distribution})}
+\acronym{LoRA}{adaptacja niskorzędowa (ang.\ \emph{Low-Rank Adaptation})}
+\acronym{MoE}{mieszanina ekspertów (ang.\ \emph{Mixture-of-Experts})}
+\acronym{NDJSON}{format JSON rozdzielany znakami nowej linii (ang.\ \emph{Newline Delimited JSON})}
+\acronym{NLP}{przetwarzanie języka naturalnego (ang.\ \emph{Natural Language Processing})}
+\acronym{PTQ}{kwantyzacja po trenowaniu (ang.\ \emph{Post-Training Quantization})}
 \acronym{PW}{Politechnika Warszawska}
+\acronym{QLoRA}{adaptacja LoRA z~kwantyzacją wag bazowych (ang.\ \emph{Quantized Low-Rank Adaptation})}
+\acronym{RAG}{generacja wspomagana wyszukiwaniem (ang.\ \emph{Retrieval-Augmented Generation})}
+\acronym{RAM}{pamięć operacyjna (ang.\ \emph{Random Access Memory})}
 \acronym{RPi}{Raspberry Pi}
-\acronym{HA}{Home Assistance}
-\acronym{Z2M}{Zigbee To Mqtt}
-\acronym{SI}{Sztuczna Inteligencja}
-\acronym{AP}{Access Point}
+\acronym{SLM}{mały model językowy (ang.\ \emph{Small Language Model})}
+\acronym{SoC}{układ scalony integrujący wszystkie elementy systemu (ang.\ \emph{System on a Chip})}
+\acronym{STT}{zamiana mowy na tekst (ang.\ \emph{Speech-to-Text})}
+\acronym{TPE}{estymator Parzena o~strukturze drzewiastej (ang.\ \emph{Tree-structured Parzen Estimator})}
+\acronym{TTFT}{czas do wygenerowania pierwszego tokenu (ang.\ \emph{Time To First Token})}
+\acronym{TTS}{synteza mowy (ang.\ \emph{Text-to-Speech})}
+\acronym{VAD}{detekcja aktywności głosowej (ang.\ \emph{Voice Activity Detection})}
+\acronym{VRAM}{pamięć karty graficznej (ang.\ \emph{Video RAM})}
 
 
 \listoffigurestoc     % Spis rysunków.

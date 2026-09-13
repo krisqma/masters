@@ -6,3 +6,4 @@ report.html
 optuna.db
 __pycache__/
 *.pyc
+.pdf-tools/*

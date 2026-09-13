@@ -18,7 +18,7 @@ dzięki czemu ranking modeli przestał odzwierciedlać odporność na throttling
 a~zaczął mierzyć jakość semantyczną. Model docelowy \texttt{gemma3:4b} awansował
 z~czwartego na pierwsze miejsce: \emph{composite score} wzrósł z~0{,}497 do~0{,}806
 ($+62{,}3\%$), a~mediana E2E skróciła się z~57\,584~ms do~31\,742~ms
-($1{,}81\times$ szybciej) --- por.~tabele~\ref{tab:ranking_run1}
+($1{,}81\times$ szybciej) -- por.~tabele~\ref{tab:ranking_run1}
 i~\ref{tab:ranking_run2}.
 
 Po drugie, analiza statystyczna Run~3 wykazała, że o~wyniku decyduje przede
@@ -42,7 +42,7 @@ kompromisem między rozmiarem, szybkością a~jakością dla modeli rodziny Gemm
 Po czwarte, i~jest to wynik kluczowy dla użyteczności prototypu, udało się
 radykalnie zredukować czas do pierwszego tokenu (TTFT). Na Raspberry~Pi~5
 pracującym wyłącznie na procesorze (CPU-only) prefill długiego promptu
-systemowego dominuje całkowite opóźnienie --- przy zimnym cache TTFT stanowi
+systemowego dominuje całkowite opóźnienie -- przy zimnym cache TTFT stanowi
 ok.~87\% E2E. Utrzymanie modelu oraz pamięci podręcznej kluczy i~wartości
 (KV-cache) w~,,ciepłej'' pamięci RAM (\texttt{keep\_alive=30m}) w~połączeniu
 z~konstrukcją promptu ze stałym prefiksem (\emph{prefix caching}) skróciło
@@ -56,7 +56,7 @@ Po piąte, połączenie powyższych dźwigni prowadzi do konkretnej, rekomendowa
 konfiguracji produkcyjnej: \texttt{gemma3:4b} z~kwantyzacją Q4\_K\_M
 i~\emph{prefix cachingiem}. Osiąga ona E2E na poziomie ok.~9~s
 (tabela~\ref{tab:rekomendacja_produkcyjna}) przy wskaźniku halucynacji
-1{,}17\% --- czternastokrotnie niższym niż druga najlepsza opcja (16{,}5\%,
+1{,}17\% -- czternastokrotnie niższym niż druga najlepsza opcja (16{,}5\%,
 tabela~\ref{tab:wyniki_finalne}).
 
 \subsection{Ocena prototypu względem założeń}
@@ -64,9 +64,9 @@ tabela~\ref{tab:wyniki_finalne}).
 Tezę pracy sformułowano w~dwóch wymiarach (sekcja~\ref{sec:modele} oraz wstęp),
 które posłużą tutaj jako punkt odniesienia dla oceny prototypu.
 
-Pierwszy wymiar --- zwiększenie dostępności informacji o~stanie domku
+Pierwszy wymiar -- zwiększenie dostępności informacji o~stanie domku
 wypoczynkowego dla użytkownika nietechnicznego poprzez lokalny interfejs
-głosowy --- został zrealizowany. Zbudowany prototyp o~architekturze
+głosowy -- został zrealizowany. Zbudowany prototyp o~architekturze
 Teacher--Student działa w~kompletnym łańcuchu przetwarzania: od detekcji
 aktywności głosowej (VAD) i~transkrypcji mowy (STT), przez dynamiczne budowanie
 kontekstu z~danych sensorycznych IoT przez model Nauczyciela, generację
@@ -77,13 +77,13 @@ zależy od czasu generacji kontekstu. Poprawność całego łańcucha zweryfikow
 dla scenariuszy odpowiadających kategoriom złotego zbioru testowego, w~tym
 przypadków z~brakującymi i~nieaktualnymi danymi.
 
-Drugi wymiar --- wykonalność rozwiązania na platformie sprzętowej o~ograniczonych
-zasobach --- oceniono względem trzech założeń przyjętych we wstępie:
+Drugi wymiar -- wykonalność rozwiązania na platformie sprzętowej o~ograniczonych
+zasobach -- oceniono względem trzech założeń przyjętych we wstępie:
 \begin{itemize}
   \item \textbf{Krótki czas odpowiedzi:} założenie spełnione. Dzięki kwantyzacji
         Q4\_K\_M oraz utrzymaniu gorącego stanu modelu w~RAM (\emph{prefix
         caching}) osiągnięto E2E na poziomie ok.~9~s (TTFT ok.~2{,}4~s,
-        generacja ok.~6{,}4~s) --- wartość akceptowalną dla asystenta głosowego,
+        generacja ok.~6{,}4~s) -- wartość akceptowalną dla asystenta głosowego,
         zwłaszcza w~połączeniu ze strumieniowaniem odpowiedzi i~równoległą
         syntezą mowy.
   \item \textbf{Ograniczenie halucynacji:} założenie spełnione częściowo.
@@ -131,8 +131,8 @@ w~formacie \texttt{messages} (role \texttt{system}, \texttt{user}
 i~\texttt{assistant}) i~pokrywać kategorie złotego zbioru testowego:
 \texttt{factual\_status}, \texttt{missing\_data}, \texttt{conflicting\_data},
 \texttt{stale\_data} oraz \texttt{paraphrase}. Celem eksperymentu jest
-sprawdzenie, czy model dostrojony --- pozbawiony jawnych reguł w~prompcie
-systemowym --- przewyższa model bazowy wyposażony w~te reguły właśnie
+sprawdzenie, czy model dostrojony -- pozbawiony jawnych reguł w~prompcie
+systemowym -- przewyższa model bazowy wyposażony w~te reguły właśnie
 na najtrudniejszych scenariuszach, w~których instrukcje promptowe okazały
 się mieć wpływ marginalny. Takie badanie wykracza poza ramy czasowe
 niniejszej pracy; obecne wyniki stanowią dla niego empiryczne uzasadnienie.
