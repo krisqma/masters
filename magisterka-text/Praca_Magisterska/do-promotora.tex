@@ -1,0 +1,287 @@
+%% Wersja do czytania po redakcji. Nie jest częścią pracy.
+\documentclass[
+    a4paper,
+    left=25mm,
+    right=25mm,
+    top=25mm,
+    bottom=25mm,
+    bindingoffset=5mm,
+    nohyphenation=false
+]{src/wut-thesis}
+
+\langpol
+\graphicspath{{tex/img/}}
+\addbibresource{bibliografia.bib}
+
+\newcommand{\nieredagowane}{%
+\textit{Ten fragment został usunięty z bieżącej wersji, ponieważ powstał przed pierwszą rundą uwag.}%
+}
+
+\begin{document}
+
+\MasterThesis
+\instytut{Telekomunikacji}
+\kierunek{Inżynieria Internetu Rzeczy}
+\title{
+    Projekt i implementacja asystenta głosowego wykorzystującego lokalnie działające modele LLM na platformie sprzętowej o ograniczonych zasobach.
+}
+\engtitle{
+   Design and implementation of a voice assistant using locally running LLM models on a resource-constrained hardware platform.
+}
+\author{Krzysztof Kulma}
+\album{318476}
+\promotor{dr inż. Daniel Paczesny}
+\date{\the\year}
+\maketitle
+
+\cleardoublepage
+\streszczenie Celem pracy było zwiększenie interaktywności wczasowiczów przebywających w~domkach wypoczynkowych Ośrodka Wypoczynkowego Politechniki Warszawskiej w~Wildze. Zrealizowano prototyp w~postaci lokalnego asystenta głosowego, który umożliwia wczasowiczom dostęp do informacji zbieranych przez sieć czujników IoT. Asystent ma w~przystępny sposób tłumaczyć odczyty dotyczące warunków w~domku i~zużycia energii, bez konieczności korzystania z~interfejsu technicznego.
+
+Część implementacyjna polegała na zaprojektowaniu i~uruchomieniu kompletnego systemu do interakcji głosowej. Obejmuje on detekcję mowy, transkrypcję, dynamiczne budowanie kontekstu z~danych IoT, lokalną generację odpowiedzi oraz syntezę mowy. System został oparty na architekturze dwumodelowej. Większy model „Nauczyciel” asynchronicznie analizuje dane z~sieci czujników, a~mniejszy model „Uczeń” odpowiada na bieżąco na pytania użytkownika na urządzeniu brzegowym.
+
+Część badawcza polegała na empirycznym doborze małego modelu językowego oraz parametrów jego pracy na urządzeniu o~ograniczonych zasobach. Na Raspberry~Pi~5 porównano kilka małych modeli językowych z~rodzin Gemma, Llama, Qwen, Phi i~Bielik, pochodzących od różnych dostawców. Zbadano wpływ kwantyzacji wag, hiperparametrów generacji oraz konstrukcji promptu na jakość odpowiedzi w~języku polskim i~na czas ich uzyskania.
+
+Wykonana implementacja i~przeprowadzone testy na Raspberry~Pi~5 pozwoliły wykazać, że użyteczny asystent głosowy może działać lokalnie, bez wysyłania zapytań do chmury. Najbardziej efektywna zbadana konfiguracja, model \texttt{gemma3:4b} poddany kwantyzacji Q4\_K\_M, z~ponownym użyciem stałego prefiksu promptu, osiągnęła medianę czasu odpowiedzi (E2E, od zapytania do ostatniego tokenu) poniżej 10~s przy wskaźniku halucynacji 1{,}17\%. Otrzymane wyniki wskazują, że o~jakości odpowiedzi decyduje przede wszystkim wybór modelu, a~skrócenie opóźnienia wymaga utrzymania modelu w~pamięci urządzenia i~obniżenia precyzji wag.
+\slowakluczowe asystent głosowy, LLM, IoT, smart home, inferencja lokalna
+
+\cleardoublepage
+\abstract The aim of this thesis was to increase the interactivity of guests staying at the Warsaw University of Technology holiday cottages in Wilga. A prototype was implemented in the form of a local voice assistant that gives guests access to information collected by an IoT sensor network. The assistant explains cottage conditions and energy use in everyday language, so there is no need for a technical interface.
+
+The implementation work designed and ran a complete voice interaction system. It covers speech detection, transcription, dynamic context building from IoT data, local response generation, and speech synthesis. The system was based on a dual-model architecture. A larger ``Teacher'' model analyses data from the sensor network in the background, and a smaller ``Student'' model answers the user in real time on the edge device.
+
+The research work selected a small language model and its operating parameters empirically, on a resource-constrained device. Several small language models from the Gemma, Llama, Qwen, Phi and Bielik families, from different vendors, were compared on a Raspberry~Pi~5. The study examined how weight quantization, generation hyperparameters, and prompt design affect the quality of answers in Polish and the time needed to produce them.
+
+The implementation and the tests on a Raspberry~Pi~5 showed that a useful voice assistant can run locally, without sending queries to the cloud. The most effective configuration studied, the \texttt{gemma3:4b} model quantized to Q4\_K\_M, with reuse of a fixed prompt prefix, reached a median end-to-end response time, from query to last token, below 10~s, at a hallucination rate of 1.17\%. The obtained results indicate that answer quality depends primarily on the choice of model, while reducing latency requires keeping the model in device memory and lowering the precision of its weights.
+\keywords voice assistant, LLM, IoT, smart home, on-device inference
+
+\cleardoublepage
+\pagestyle{plain}
+\tableofcontents
+\cleardoublepage
+\pagestyle{headings}
+
+\input{tex/1-wstep}
+
+\newpage
+\section{Przegląd literatury i analiza rozwiązań}
+\label{sec:analiza_literatury}
+
+Pracę nad rozwiązaniem poprzedzono przeglądem literatury oraz dostępnych rozwiązań. Przetwarzanie języka naturalnego (ang. \emph{Natural Language Processing}, NLP) jest dziś zdominowane przez modele językowe (ang. \emph{Large Language Models}, LLM). Sam rynek LLM jest jednak bardzo szeroki: jego główną część stanowią trenowanie wielkich modeli językowych o~dziesiątkach i~setkach miliardów parametrów, budowanie systemów w~oparciu o~chmurowe interfejsy programistyczne, systemy multimodalne, agenci planujący wieloetapowe zadania oraz komercyjne asystenci. Niniejszy rozdział nie pokrywa tego obszaru w~całości. Ograniczono się do wycinka na przecięciu trzech zagadnień: małych modeli językowych (ang. \emph{Small Language Models}, SLM), inferencji na urządzeniu brzegowym oraz interfejsu głosowego.
+
+Kwantyzacja wag, współpraca modeli o~różnej wielkości, inżynieria promptów, dobór hiperparametrów oraz łańcuch przetwarzania mowy są rozumiane jako podzbiory wymienionych grup, a~nie jako osobne pola badawcze. Schemat ilustrujący ten zakres jest w~przygotowaniu i~nie wchodzi do tej wersji.
+
+\subsection{Małe modele językowe}
+\label{subsec:slm}
+
+\subsubsection{Modele językowe}
+\label{subsec:modele_jezykowe}
+
+Fundamentem współczesnego przetwarzania języka naturalnego (ang. \emph{Natural Language Processing}, NLP) jest architektura Transformer \cite{Vaswani2017}. Na niej oparte są niemal wszystkie najnowsze modele językowe popularnych dostawców.
+
+W ostatnich latach widoczny stał się nurt rozwijania małych modeli językowych (ang. \emph{Small Language Models}, SLM), o~rozmiarze rzędu kilku miliardów parametrów. Dzięki treningowi prowadzonemu na wysokiej jakości, selektywnie dobranych danych osiągi tych modeli potrafią zbliżyć się do jednostek wielokrotnie od nich większych. Potwierdzają to raporty techniczne opublikowane przez firmy Meta \cite{Llama3}, Microsoft \cite{Phi3} oraz Google \cite{Gemma2}. Modele Llama~3, Phi-3 i~Gemma~2 osiągają wyniki konkurencyjne względem modeli o~rozmiarach rzędu dziesiątek miliardów parametrów, przy znacznie mniejszych wymaganiach sprzętowych. Nie wszystkie modele SLM są jednak oparte na architekturze Transformer. Polski model Bielik \cite{Bielik} oparty jest na architekturze Mistral.
+
+Rynek małych modeli językowych rozwija się dynamicznie. W~trakcie realizacji badań będących częścią niniejszej pracy na rynku pojawiły się kolejne generacje modeli znanych dostawców. Okazuje się, że mimo tej samej architektury oraz producenta optymalna konfiguracja może nie być transferowalna na kolejną generację \cite{Renney2026}.
+
+\subsubsection{Wielomodelowe systemy LLM}
+\nieredagowane
+
+\subsubsection{Inżynieria promptów i dostarczanie kontekstu}
+\nieredagowane
+
+\subsubsection{Optymalizacja hiperparametrów generacji}
+\nieredagowane
+
+\subsubsection{Fine tuning modeli językowych}\label{sec:finetuning}
+\nieredagowane
+
+\subsection{Inferencja na urządzeniu brzegowym}
+\label{subsec:edge_inf}
+
+\subsubsection{Architektury hybrydowe Edge--Cloud}
+\label{subsec:edge_cloud}
+
+Modele językowe mogą być uruchamiane lokalnie, na urządzeniu brzegowym (ang. \emph{edge computing}), albo po stronie serwera, w~chmurze (ang. \emph{cloud computing}).
+
+Architektura chmurowa oferuje bardzo duże zasoby obliczeniowe, zwykle większe niż urządzenia brzegowe czy serwery prywatne. Wadą tych rozwiązań jest niezerowe opóźnienie komunikacyjne, wynikające z~konieczności transmitowania danych. Drugim ograniczeniem obliczeń chmurowych jest zależność od stałego połączenia z~internetem. Istotne pozostają również kwestie prywatności: dane użytkownika muszą zostać przesłane do zewnętrznego dostawcy mocy obliczeniowej \cite{Renney2026}.
+
+Architektura brzegowa umożliwia przetwarzanie lokalne i~eliminuje narzut komunikacyjny. Dane pozostają na urządzeniu. Ciągnie to jednak za sobą pewne ograniczenia. Urządzenia brzegowe dysponują zazwyczaj znacznie mniejszą mocą obliczeniową, dlatego stosowane modele muszą być odpowiednio mniejsze. Badania empiryczne pokazują, że procesory ARM w~komputerach jednopłytkowych osiągają wydajność rzędu od 5 do 15 tokenów na sekundę dla modeli, których wielkość mieści się w~granicach 1,5 miliarda parametrów oraz od 2 do 15 tokenów na sekundę dla modeli posiadających 3 miliardy parametrów \cite{Nguyen2025SBC}. Dla tej klasy sprzętu modele o~rozmiarze od 2 do 4 miliardów parametrów stanowią często stosowany zakres kompromisu między jakością a~czasem generacji \cite{Nguyen2025SBC}.
+
+Wąskim gardłem inferencji (procesu generowania odpowiedzi) na procesorze bez GPU pozostaje przepustowość pamięci (ang. \emph{memory bandwidth}) oraz konieczność utrzymania temperatury poniżej progu przegrzewania \cite{Kim2023SqueezeLLM,Tummalapalli2026}. Generowanie kolejnych tokenów wymaga cyklicznego odczytu wag neuronów z~pamięci, dlatego im większy model i~dłuższy kontekst, tym bardziej skomplikowany jest proces generowania. Z~literatury wynika, że na urządzeniach brzegowych skrócenie czasu odpowiedzi wymaga ograniczenia liczby wag (dobór modelu) i~długości przetwarzanego kontekstu, a~nie wyłącznie zwiększania mocy obliczeniowej.
+
+Kompromisem pomiędzy architekturami brzegową i chmurową jest architektura hybrydowa, w~której trudniejsze rozumowanie (ang. \emph{reasoning}) realizowane jest na lokalnym serwerze, natomiast inferencja obsługująca użytkownika odbywa się na urządzeniu brzegowym \cite{Renney2026}. Podejście to zachowuje prywatność danych (brak ryzyka związanego z transmisją), ponieważ serwer działa lokalnie, jednocześnie umożliwiając użycie modelu większego niż ten uruchamiany bezpośrednio na brzegu. Modele na lokalnym serwerze nie są jednak zwykle tak rozbudowane jak modele dostępne w~chmurze.
+
+Z~przeprowadzonego przeglądu wynika, że dla asystenta korzystającego z~danych systemu IoT pełne przeniesienie inferencji do chmury jest niekorzystne. Wprowadza zależność od łącza internetowego, bardzo niestabilnego w Wildzie. Czyste przetwarzanie brzegowe z~kolei wymusza użycie jedynie małego modelu językowego i~ograniczenie długości kontekstu. Modele mniejsze niż około 1,5 miliarda parametrów często nie osiągają zadowalającej jakości odpowiedzi w~języku polskim, natomiast modele przekraczające 4 miliardy parametrów wymagają możliwości przekraczających dostępne lokalnie moce obliczeniowe \cite{Nguyen2025SBC}. Kierunkiem przyjętym w~dalszej części pracy jest więc architektura hybrydowa: lokalny serwer wspomagający analizę, a~urządzenie brzegowe, obsługuje odpowiedź skierowaną do użytkownika.
+
+\subsubsection{Kwantyzacja dla inferencji na sprzęcie bez GPU}\label{sec:kwantyzacja}
+\nieredagowane
+
+\subsection{Interfejs głosowy}
+\label{subsec:glos}
+
+\subsubsection{Interfejsy głosowe: rozpoznawanie mowy, detekcja aktywności głosowej i synteza mowy}
+\nieredagowane
+
+\newpage
+\section{Koncepcja i architektura systemu}
+\label{sec:koncepcja}
+\nieredagowane
+
+\subsection{Założenia projektowe}
+\nieredagowane
+
+\subsection{Architektura Nauczyciel–Uczeń}
+\label{subsec:teacher_student}
+\nieredagowane
+
+\subsection{Schemat przepływu danych}
+\label{subsec:przeplyw}
+\nieredagowane
+
+\newpage
+\section{Środowisko projektowo-badawcze}
+\nieredagowane
+
+\subsection{Wybór platformy brzegowej}
+\nieredagowane
+
+\subsection{Architektura sprzętowa}
+\nieredagowane
+
+\subsection{Modele LLM w przetwarzaniu brzegowym danych}
+\nieredagowane
+
+\subsection{Wykorzystane oprogramowanie i technologie}
+\nieredagowane
+
+\subsubsection{Aplikacja użytkownika}
+\nieredagowane
+
+\subsubsection{Warstwa usług}
+\nieredagowane
+
+\subsubsection{Moduły STT i TTS}
+\nieredagowane
+
+\subsubsection{LLM}
+\nieredagowane
+
+\subsubsection{Moduł kontekstu}
+\nieredagowane
+
+\subsubsection{Narzędzia badawcze}
+\nieredagowane
+
+\newpage
+\section{Część badawcza: analiza porównawcza i optymalizacja SLM na urządzeniu}
+\label{sec:modele}
+\nieredagowane
+
+\subsection{Architektura i metodologia systemu testowego}
+\nieredagowane
+
+\subsubsection{Komponenty systemu testowego}
+\nieredagowane
+
+\subsubsection{Zbiór danych testowych}
+\nieredagowane
+
+\subsubsection{Metryki oceny}
+\nieredagowane
+
+\subsubsection{Dostrajanie parametrów pracy modelu}
+\nieredagowane
+
+\subsubsection{Porównywane modele}
+\nieredagowane
+
+\subsection{Etap Optuna}
+\nieredagowane
+
+\subsubsection{Warunek termiczny pomiaru}
+\nieredagowane
+
+\subsubsection{Dominacja flagi halucynacji}
+\nieredagowane
+
+\subsubsection{Opóźnienie E2E i model Gaussa}
+\nieredagowane
+
+\subsection{Etap kwantyzacji}
+\nieredagowane
+
+\subsubsection{Typy kwantyzacji GGUF}
+\nieredagowane
+
+\subsubsection{Wstępne pomiary E2E}
+\nieredagowane
+
+\subsubsection{Wyniki}
+\nieredagowane
+
+\subsubsection{Anomalie i wnioski}
+\nieredagowane
+
+\subsection{Inżynieria promptów i buforowanie prefiksu}
+\nieredagowane
+
+\subsubsection{Buforowanie prefiksu promptu systemowego}
+\nieredagowane
+
+\subsubsection{Budowa promptu systemowego}
+\nieredagowane
+
+\subsection{Rekomendacje dla prototypu}
+\nieredagowane
+
+\newpage
+\section{Część implementacyjna: realizacja prototypu}
+\label{sec:realizacja}
+\nieredagowane
+
+\subsection{Architektura prototypu}
+\nieredagowane
+
+\subsection{Elementy systemu i wykorzystane technologie}
+\nieredagowane
+
+\subsubsection{Aplikacja użytkownika}
+\nieredagowane
+
+\subsubsection{Transkrypcja mowy (STT)}
+\nieredagowane
+
+\subsubsection{Moduł kontekstu}
+\nieredagowane
+
+\subsubsection{LLM Nauczyciel}
+\nieredagowane
+
+\subsubsection{SLM Uczeń}
+\nieredagowane
+
+\subsubsection{Synteza mowy (TTS)}
+\nieredagowane
+
+\subsubsection{Konfiguracja}
+\nieredagowane
+
+\subsection{Testy prototypu}
+\nieredagowane
+
+\newpage
+\section{Podsumowanie}
+\nieredagowane
+
+\subsection{Wnioski z przeprowadzonych badań}
+\nieredagowane
+
+\subsection{Ocena prototypu względem założeń}
+\nieredagowane
+
+\subsection{Plan rozwoju}
+\nieredagowane
+
+\cleardoublepage
+\printbibliography
+
+\end{document}

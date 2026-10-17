@@ -34,7 +34,7 @@ Ograniczenia środowiska edge wpłynęły również na podjęcie decyzji o zasto
 
 Aplikacja użytkownika, tak jak omówiono w rozdziale \ref{sec:koncepcja}, nie była tworzona w ramach od podstaw. Zdecydowano się zbudować aplikację w oparciu o istniejącą aplikację systemu Wilga MiLL. W konsekwencji podstawowy stos technologiczny części frontendowej został narzucony przez istniejące rozwiązanie. Aplikacja została przygotowana z wykorzystaniem biblioteki React, języka programistycznego TypeScript, tailwind CSS oraz narzędzia Vite. Komunikacja z serwerem odbywa się z użyciem protokołu HTTP. 
 
-\subsubsection{Warstwa serwerowa i komunikacyjna}
+\subsubsection{Warstwa usług}
 
 Warstwa serwerowa pełni funkcję pośrednią pomiędzy aplikacją użytkownika, modułami przetwarzania mowy, modelem nauczyciela, a modelem ucznia. Do jej zaimplementowania wykorzystano język Python, gdyż jest on szeroko stosowany w rozwiązaniach związanych z uczeniem maszynowym i umożliwia sprawną integrację z bibliotekami obsługującymi modele LLM jaki i przetwarzanie dźwięku. Jako technologię budowy interfejsu API wskazano FastAPI, które pozwala tworzyć lekkie i szybkie usługi HTTP oraz endpointy wykorzystywane przez aplikację użytkownika.
 
