@@ -1,4 +1,6 @@
-%% Wersja do czytania po redakcji. Nie jest częścią pracy.
+%% Wersja dla promotora — 18.10.2026.
+%% Zakres: streszczenia + wstęp + przegląd literatury (rozdz. 1–2).
+%% Rozdziały 3–7: placeholdery (\nieredagowane). Nie jest częścią finalnej pracy.
 \documentclass[
     a4paper,
     left=25mm,
@@ -60,66 +62,12 @@ The implementation and the tests on a Raspberry~Pi~5 showed that a useful voice 
 \cleardoublepage
 \pagestyle{headings}
 
+\noindent\textit{Wersja dla promotora z~18.10.2026.
+Do redakcji włączono streszczenia, rozdział~1 (wstęp) oraz rozdział~2 (przegląd literatury).
+Kolejne rozdziały pozostają poza zakresem tej wersji.}
+
 \input{tex/1-wstep}
-
-\newpage
-\section{Przegląd literatury i analiza rozwiązań}
-\label{sec:analiza_literatury}
-
-Pracę nad rozwiązaniem poprzedzono przeglądem literatury oraz dostępnych rozwiązań. Przetwarzanie języka naturalnego (ang. \emph{Natural Language Processing}, NLP) jest dziś zdominowane przez modele językowe (ang. \emph{Large Language Models}, LLM). Sam rynek LLM jest jednak bardzo szeroki. Jego główną część stanowią trenowane wielkie modele językowe o~dziesiątkach i~setkach miliardów parametrów, budowanie systemów w~oparciu o~chmurowe interfejsy programistyczne, systemy multimodalne, agenci planujący wieloetapowe zadania oraz asystenci komercyjni. Niniejszy rozdział nie obejmuje tego obszaru w~całości. Przegląd zawężono do trzech zagadnień bezpośrednio związanych z~tematem pracy. Omówiono małe modele językowe (ang. \emph{Small Language Models}, SLM), inferencję na urządzeniu brzegowym oraz interfejs głosowy.
-
-Kwantyzacja wag, współpraca modeli o~różnej wielkości, inżynieria promptów, dobór hiperparametrów oraz łańcuch przetwarzania mowy są rozumiane jako podzbiory wymienionych grup, a~nie jako osobne pola badawcze. Schemat ilustrujący ten zakres jest w~przygotowaniu i~nie wchodzi do tej wersji.
-
-\subsection{Małe modele językowe}
-\label{subsec:slm}
-
-\subsubsection{Modele językowe}
-\label{subsec:modele_jezykowe}
-
-Fundamentem współczesnego przetwarzania języka naturalnego (ang. \emph{Natural Language Processing}, NLP) jest architektura Transformer \cite{Vaswani2017}. Na niej oparte są niemal wszystkie najnowsze modele językowe popularnych dostawców.
-
-W ostatnich latach widoczny stał się nurt rozwijania małych modeli językowych (ang. \emph{Small Language Models}, SLM), o~rozmiarze rzędu kilku miliardów parametrów. Dzięki treningowi prowadzonemu na wysokiej jakości, selektywnie dobranych danych osiągi tych modeli potrafią zbliżyć się do jednostek wielokrotnie od nich większych. Potwierdzają to raporty techniczne opublikowane przez firmy Meta \cite{Llama3}, Microsoft \cite{Phi3} oraz Google \cite{Gemma2}. Modele Llama~3, Phi-3 i~Gemma~2 osiągają wyniki konkurencyjne względem modeli o~rozmiarach rzędu dziesiątek miliardów parametrów, przy znacznie mniejszych wymaganiach sprzętowych. Nie wszystkie modele SLM są jednak oparte na architekturze Transformer. Polski model Bielik \cite{Bielik} oparty jest na architekturze Mistral.
-
-Rynek małych modeli językowych rozwija się dynamicznie. W~trakcie realizacji badań będących częścią niniejszej pracy na rynku pojawiły się kolejne generacje modeli znanych dostawców. Okazuje się, że mimo tej samej architektury oraz producenta optymalna konfiguracja może nie być transferowalna na kolejną generację \cite{Renney2026}.
-
-\subsubsection{Wielomodelowe systemy LLM}
-\nieredagowane
-
-\subsubsection{Inżynieria promptów i dostarczanie kontekstu}
-\nieredagowane
-
-\subsubsection{Optymalizacja hiperparametrów generacji}
-\nieredagowane
-
-\subsubsection{Fine tuning modeli językowych}\label{sec:finetuning}
-\nieredagowane
-
-\subsection{Inferencja na urządzeniu brzegowym}
-\label{subsec:edge_inf}
-
-\subsubsection{Architektury hybrydowe Edge--Cloud}
-\label{subsec:edge_cloud}
-
-Modele językowe mogą być uruchamiane lokalnie, na urządzeniu brzegowym (ang. \emph{edge computing}), albo po stronie serwera, w~chmurze (ang. \emph{cloud computing}).
-
-Architektura chmurowa oferuje bardzo duże zasoby obliczeniowe, zwykle większe niż urządzenia brzegowe czy serwery prywatne. Wadą tych rozwiązań jest niezerowe opóźnienie komunikacyjne, wynikające z~konieczności transmitowania danych. Drugim ograniczeniem obliczeń chmurowych jest zależność od stałego połączenia z~internetem. Istotne pozostają również kwestie prywatności. Dane użytkownika muszą zostać przesłane do zewnętrznego dostawcy mocy obliczeniowej \cite{Renney2026}.
-
-Architektura brzegowa umożliwia przetwarzanie lokalne i~eliminuje narzut komunikacyjny. Dane pozostają na urządzeniu. Powoduje to jednak pewne ograniczenia. Urządzenia brzegowe dysponują zazwyczaj znacznie mniejszą mocą obliczeniową, dlatego stosowane modele muszą być odpowiednio mniejsze. Badania empiryczne pokazują, że procesory ARM w~komputerach jednopłytkowych osiągają wydajność rzędu od 5 do 15 tokenów na sekundę dla modeli, których wielkość mieści się w~granicach 1,5 miliarda parametrów oraz od 2 do 15 tokenów na sekundę dla modeli posiadających 3 miliardy parametrów \cite{Nguyen2025SBC}. Dla tej klasy sprzętu modele o~rozmiarze od 2 do 4 miliardów parametrów stanowią często stosowany kompromis między jakością a~czasem generacji \cite{Nguyen2025SBC}.
-
-Wąskim gardłem inferencji (procesu generowania odpowiedzi) na procesorze bez GPU pozostaje przepustowość pamięci (ang. \emph{memory bandwidth}) oraz konieczność utrzymania temperatury poniżej progu przegrzewania \cite{Kim2023SqueezeLLM,Tummalapalli2026}. Generowanie kolejnych tokenów wymaga cyklicznego odczytu wag neuronów z~pamięci, dlatego im większy model i~dłuższy kontekst, tym bardziej skomplikowany jest proces generowania. Z~literatury wynika, że na urządzeniach brzegowych skrócenie czasu odpowiedzi wymaga ograniczenia liczby wag (dobór modelu) i~długości przetwarzanego kontekstu, a~nie wyłącznie zwiększania mocy obliczeniowej.
-
-Kompromisem pomiędzy architekturami brzegową i chmurową jest architektura hybrydowa, w~której trudniejsze rozumowanie (ang. \emph{reasoning}) realizowane jest na lokalnym serwerze, natomiast inferencja obsługująca użytkownika odbywa się na urządzeniu brzegowym \cite{Renney2026}. Podejście to zachowuje prywatność danych (brak ryzyka związanego z transmisją), ponieważ serwer działa lokalnie, jednocześnie umożliwiając użycie modelu większego niż ten uruchamiany bezpośrednio na urządzeniu brzegowym. Modele na lokalnym serwerze nie są jednak zwykle tak rozbudowane jak modele dostępne w~chmurze.
-
-Z~przeprowadzonego przeglądu wynika, że dla asystenta korzystającego z~danych systemu IoT pełne przeniesienie inferencji do chmury jest niekorzystne. Wprowadza zależność od łącza internetowego, bardzo niestabilnego w Wildzie. Czyste przetwarzanie brzegowe z~kolei wymusza użycie jedynie małego modelu językowego i~ograniczenie długości kontekstu. Modele mniejsze niż około 1,5 miliarda parametrów często nie osiągają zadowalającej jakości odpowiedzi w~języku polskim, natomiast modele przekraczające 4 miliardy parametrów wymagają możliwości przekraczających dostępne lokalnie moce obliczeniowe \cite{Nguyen2025SBC}. Kierunkiem przyjętym w~dalszej części pracy jest więc architektura hybrydowa składająca się z~lokalnego serwera wspomagającego analizę oraz urządzenia brzegowego obsługującego odpowiedź skierowaną do użytkownika.
-
-\subsubsection{Kwantyzacja dla inferencji na sprzęcie bez GPU}\label{sec:kwantyzacja}
-\nieredagowane
-
-\subsection{Interfejs głosowy}
-\label{subsec:glos}
-
-\subsubsection{Interfejsy głosowe: rozpoznawanie mowy, detekcja aktywności głosowej i synteza mowy}
-\nieredagowane
+\input{tex/2-przeglad-literatury}
 
 \newpage
 \section{Koncepcja i architektura systemu}

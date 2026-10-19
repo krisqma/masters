@@ -421,7 +421,7 @@ wyraźnie lepszej jakościowo.
 \subsubsection{Typy kwantyzacji GGUF}
 
 
-Formatem dla zapisu modeli wspieranym przez aplikację Ollama jest GGUF. Ten sposób zapisu pliku pozwala na różne poziomy kwantyzacji wag. Jak wykazano w rozdziale \ref{sec:kwantyzacja}, kwantyzacja wag pozwala na znaczne przyspieszenie generowania odpowiedzi. Przystępując do W badaniach wpływu zmiany precyzji wag modelu uwzględniono cztery warianty:
+Formatem dla zapisu modeli wspieranym przez aplikację Ollama jest GGUF. Ten sposób zapisu pliku pozwala na różne poziomy kwantyzacji wag. Jak wykazano w rozdziale \ref{subsec:quantization}, kwantyzacja wag pozwala na znaczne przyspieszenie generowania odpowiedzi. Przystępując do W badaniach wpływu zmiany precyzji wag modelu uwzględniono cztery warianty:
 \begin{itemize}
   \item \textbf{Q8\_0} -- 8-bitowe wagi bez grupowania; baseline,
   \item \textbf{Q4\_K\_M} -- 4-bitowe wagi z~grupowaniem K i~mixed precision~M,
@@ -679,7 +679,7 @@ Dla tego modelu zauważono zdecydowane spadki jakości.
 W~pomiarach testowych ponad połowa przebiegów kończy się pustą odpowiedzią (11 z~20), a~odsetek trafień cache (\emph{warm\_cache}) spada do 0{,}45.
 Podejrzanym winowajcą tego zjawiska jest architektura modelu. Gemma~4 jest modelem MoE (ang.\ \emph{Mixture-of-Experts}), agresywna
 kwantyzacja 2-bitowa może zaburzać routing między ekspertami i~w~literaturze
-wiąże się z~gwałtownym spadkiem jakości (rozdział~\ref{sec:kwantyzacja}).
+wiąże się z~gwałtownym spadkiem jakości (rozdział~\ref{subsec:quantization}).
 
 
 Podjęto wiele prób testów polskiego modelu Bielik. Skupiono się głównie na \texttt{bielik-4.5b}, który jest modelem SLM. Bielik reagował responsywnie na stosowane metody ulepszania jego performance'u, przyspiesza po kwantyzacji (nawet $2{,}32\times$
@@ -690,7 +690,7 @@ model odpada z~konfiguracji produkcyjnej na Raspberry~Pi~5.
 
 Jako najlepsi kandydaci jawiły się modele autorstwa Google.
 W~rodzinie Gemma oba warianty 4-bitowe: Q4\_0 (bez grupowania) i~Q4\_K\_M
-(różniące się schematem grupowania, omówione w sekcji~\ref{sec:kwantyzacja}) dają czytelne przyspieszenie względem
+(różniące się schematem grupowania, omówione w sekcji~\ref{subsec:quantization}) dają czytelne przyspieszenie względem
 Q8\_0 bez załamania zwięzłości charakterystycznego dla Q2\_K, a~różnica między
 nimi jest zauważalniemniejsza niż skok z~ośmiu do czterech bitów: u~\texttt{gemma3-4b}
 szybszy jest Q4\_0 ($1{,}77\times$, 5{,}44~s generacji wobec $1{,}50\times$
