@@ -176,9 +176,10 @@ else
 fi
 
 check_ollama_url "Whisper Backend" "$STUDENT_OLLAMA_URL"
-# Student prefix-aware warmup + keep-warm loop live in Whisper Backend startup
-# (same static_prefix as production chat). Avoid a second dumb "OK" warmup here.
-log "Ollama Studenta dostępna (${STUDENT_OLLAMA_MODEL}); keep-warm wystartuje z backendem."
+# Student warm-up lives in the Whisper Backend: it prefills the exact session
+# prefix the chat will use, with the same options. Do NOT send any other request
+# to the Student here: different options (e.g. num_ctx) reload the model on the RPi.
+log "Ollama Studenta dostępna (${STUDENT_OLLAMA_MODEL}); rozgrzewanie wystartuje z backendem."
 
 # ---------------------------------------------------------------------------
 # 2. Przygotuj venv dla Context Service (jeśli nie istnieje)

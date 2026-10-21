@@ -1,0 +1,78 @@
+{
+ "steps": [
+  {
+   "type": "wait_ready"
+  },
+  {
+   "type": "mark",
+   "name": "V3"
+  },
+  {
+   "type": "new_session",
+   "reason": "manual"
+  },
+  {
+   "type": "wait_ready"
+  },
+  {
+   "type": "mark",
+   "name": "V3a_abort"
+  },
+  {
+   "type": "ask",
+   "text": "Cześć powiedz mi coś o temperaturze w mieszkaniu.",
+   "label": "V3a-abort-first-chunk",
+   "abort_after_first_chunk": true
+  },
+  {
+   "type": "ask",
+   "text": "Jaka jest wilgotność w łazience?",
+   "label": "V3a-next",
+   "gate": false
+  },
+  {
+   "type": "wait",
+   "seconds": 10
+  },
+  {
+   "type": "mark",
+   "name": "V3b_parallel"
+  },
+  {
+   "type": "parallel",
+   "texts": [
+    "Jaka jest temperatura w łazience?",
+    "Czy w małym pokoju ktoś jest?"
+   ],
+   "label": "V3b-par"
+  },
+  {
+   "type": "wait",
+   "seconds": 10
+  },
+  {
+   "type": "mark",
+   "name": "V3c_long"
+  },
+  {
+   "type": "ask",
+   "text": "Opowiedz mi bardzo szczegółowo, krok po kroku, o każdym pomieszczeniu w domku: temperatura, wilgotność, ciśnienie, obecność, oświetlenie, a potem dla każdego pomieszczenia napisz długą historię o tym, jak się w nim mieszka, co bym tam robił o każdej porze dnia, i na koniec podsumuj wszystko jeszcze raz w punktach.",
+   "label": "V3c-long"
+  },
+  {
+   "type": "ask",
+   "text": "Dzień dobry!",
+   "label": "V3c-next",
+   "gate": false
+  },
+  {
+   "type": "wait",
+   "seconds": 10
+  },
+  {
+   "type": "ask",
+   "text": "Jaka jest temperatura w łazience?",
+   "label": "V3c-next2"
+  }
+ ]
+}

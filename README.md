@@ -190,6 +190,19 @@ npm run dev
 Teacher generuje krótkie podsumowanie stanu mieszkania po polsku, a z tego budowany jest `system prompt` dla asystenta.
 Do momentu pierwszego odświeżenia endpoint `/api/context` może zwracać status `pending`.
 
+## Stabilność Ucznia: budżet tokenów
+
+Uczeń (`gemma3:4b` na RPi) ma okno przesuwne 1024 tokenów (cecha modelu). Gdy rozmowa w jedynym slocie KV Ollamy przekroczy 1024 tokeny, każda zmiana promptu wymusza przeliczenie całości (~7 tok/s na RPi, czyli minuty). Diagnoza: `stability/RAPORT.md`.
+
+Dlatego backend pilnuje niezmiennika `prompt + num_predict + margines ≤ 1024`:
+
+- Prefiks statyczny i fakty są zwięzłe: jedna linia na pokój, jawne `brak temp./wilg./ciśn.` przy brakujących odczytach, bez temperatur wewnętrznych urządzeń. Findings Teachera mają limit 160 znaków. Jakość sprawdzona testem A/B (`stability/RAPORT_PO.md`).
+- Historię trzyma backend (`session_state.py`), surowo, tak jak wygenerował ją model. Liczba tur jest dynamiczna: tyle, ile mieści się w budżecie. Gdy brakuje miejsca, najstarsze tury są wycinane z histerezą, a po przycięciu zostaje najwyżej `STUDENT_HISTORY_KEEP_MAX_TOKENS` (`student_prompt.py`).
+- Każde żądanie do Ucznia ma te same `options` (`temperature 0.2`, `num_ctx 2048`, ...) i `keep_alive: -1`. **Inne `num_ctx`/`num_batch`/`num_thread` w jakimkolwiek żądaniu do RPi (także ręcznym `curl`) przeładowuje model i kasuje cache.**
+- Rozgrzewanie wysyła dokładnie ten prefiks, którego użyje czat. Nie ma pingów z inferencją, jest tylko watchdog `/api/ps`.
+
+Ustawienia są w `whisper-proj/backend/.env` (wzór: `.env.example`, klucze `STUDENT_*`, `OLLAMA_KEEP_ALIVE=-1`, `OLLAMA_READ_TIMEOUT_SECONDS=180`). Każda tura loguje linię `Chat done: ... prompt_tok=... slot_tok=... hist_turns=... trimmed=...`.
+
 ## API
 
 ### Context Service

@@ -8,9 +8,12 @@ const normalizeBaseUrl = (rawUrl?: string) => {
 }
 
 const resolveApiBaseUrl = () => normalizeBaseUrl(import.meta.env.VITE_API_URL)
-const CHAT_REQUEST_TIMEOUT_MS = 90_000
+// The Student on the RPi prefills at ~7 tok/s: a cold session prefix can take
+// ~2 min before the first token, after that chunks arrive every few seconds.
+const CHAT_FIRST_BYTE_TIMEOUT_MS = 200_000
+const CHAT_INTER_CHUNK_TIMEOUT_MS = 30_000
 
-/** Keep in sync with backend CHAT_HISTORY_MAX_MESSAGES default. */
+/** Only seeds the backend after a backend restart; the backend budgets history by tokens. */
 export const CHAT_HISTORY_MAX_MESSAGES = 6
 
 export type ChatHistoryRole = 'user' | 'assistant'
@@ -35,10 +38,13 @@ type ChatStreamEvent =
 
 interface StreamChatReplyOptions {
   history?: ChatHistoryItem[]
+  /** Changes on page load and on "Nowa rozmowa"; lets the backend reset its history. */
+  clientSessionId?: string
   onChunk: (chunk: string) => void
   onError?: (message: string) => void
   signal?: AbortSignal
-  timeoutMs?: number
+  firstByteTimeoutMs?: number
+  interChunkTimeoutMs?: number
 }
 
 interface ChatErrorResponse {
@@ -70,10 +76,12 @@ export async function streamChatReply(
   message: string,
   {
     history = [],
+    clientSessionId,
     onChunk,
     onError,
     signal,
-    timeoutMs = CHAT_REQUEST_TIMEOUT_MS,
+    firstByteTimeoutMs = CHAT_FIRST_BYTE_TIMEOUT_MS,
+    interChunkTimeoutMs = CHAT_INTER_CHUNK_TIMEOUT_MS,
   }: StreamChatReplyOptions,
 ): Promise<void> {
   const requestMessage = message.trim()
@@ -91,10 +99,15 @@ export async function streamChatReply(
 
   const controller = new AbortController()
   let didTimeout = false
-  const timeoutId = window.setTimeout(() => {
-    didTimeout = true
-    controller.abort()
-  }, timeoutMs)
+  let timeoutId = 0
+  const armTimeout = (ms: number) => {
+    window.clearTimeout(timeoutId)
+    timeoutId = window.setTimeout(() => {
+      didTimeout = true
+      controller.abort()
+    }, ms)
+  }
+  armTimeout(firstByteTimeoutMs)
 
   const abortFromCaller = () => {
     controller.abort()
@@ -117,6 +130,7 @@ export async function streamChatReply(
       body: JSON.stringify({
         message: requestMessage,
         history: trimmedHistory,
+        client_session_id: clientSessionId,
       }),
       signal: controller.signal,
     })
@@ -176,6 +190,7 @@ export async function streamChatReply(
       if (done) {
         break
       }
+      armTimeout(interChunkTimeoutMs)
 
       buffer += decoder.decode(value, { stream: true })
       buffer = drainDecodedBuffer(buffer, processLine, false)

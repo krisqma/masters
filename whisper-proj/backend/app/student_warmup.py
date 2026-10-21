@@ -1,26 +1,35 @@
-"""Keep Student Ollama model + prefix KV cache warm on the RPi."""
+"""Keep the Student (gemma3 on the RPi) loaded and its session prefix prefilled.
+
+- Warm-up = the exact session prefix the chat will send ([system, facts]) with
+  the shared options and num_predict=1, so the first question only appends.
+- No periodic inference: the model stays loaded via keep_alive=-1 on every
+  request; a watchdog polls /api/ps (no inference, no KV cache change) and
+  re-warms only when the model is really gone (e.g. Ollama/RPi restart) or was
+  loaded with different options by someone else.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 import time
-from typing import Any, Literal, Optional
+from typing import Any, Awaitable, Callable, List, Literal, Optional, Tuple
 from urllib.parse import urlparse
 
 import httpx
 
-from .config import FALLBACK_STUDENT_STATIC_PREFIX, Settings
+from .config import Settings
+from .student_prompt import GENERATION_PROMPT_TOKENS, student_options
 
 logger = logging.getLogger(__name__)
 
-PING_USER_MESSAGE = "ping"
-
 StudentStatus = Literal["warming", "warm", "error"]
+# Returns (prefix_messages, on_measured_prefix_tokens callback).
+PrefixProvider = Callable[[], Awaitable[Tuple[List[dict], Callable[[int], None]]]]
 
 
 def ollama_base_url(chat_url: str) -> str:
-    """http://host:11434/api/chat → http://host:11434"""
+    """http://host:11434/api/chat -> http://host:11434"""
     normalized = chat_url.strip().rstrip("/")
     if normalized.endswith("/api/chat"):
         return normalized[: -len("/api/chat")]
@@ -44,15 +53,16 @@ class StudentKeepWarm:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._task: Optional[asyncio.Task[None]] = None
-        self._stop = asyncio.Event()
-        self._last_ok_at: Optional[float] = None
+        self._stop: Optional[asyncio.Event] = None
+        self._prefix_provider: Optional[PrefixProvider] = None
         self._student_warm = False
         self._student_status: StudentStatus = "warming"
         self._student_error: Optional[str] = None
         self._chat_busy = False
-        self._session_warming = False
-        self._ollama_lock = asyncio.Lock()
+        self._ollama_lock: Optional[asyncio.Lock] = None
+        self._ps_failures = 0
 
+    # ----------------------------------------------------------------- state
     @property
     def student_warm(self) -> bool:
         return self._student_warm
@@ -72,30 +82,36 @@ class StudentKeepWarm:
     def set_chat_busy(self, busy: bool) -> None:
         self._chat_busy = busy
 
+    def _lock(self) -> asyncio.Lock:
+        # Created lazily inside the running loop (asyncio objects bind to a loop on py3.9).
+        if self._ollama_lock is None:
+            self._ollama_lock = asyncio.Lock()
+        return self._ollama_lock
+
     async def acquire_ollama(self) -> None:
-        await self._ollama_lock.acquire()
+        await self._lock().acquire()
 
     def release_ollama(self) -> None:
-        if self._ollama_lock.locked():
-            self._ollama_lock.release()
+        lock = self._lock()
+        if lock.locked():
+            lock.release()
 
-    async def start(self) -> None:
+    # ------------------------------------------------------------- lifecycle
+    async def start(self, prefix_provider: PrefixProvider) -> None:
+        self._prefix_provider = prefix_provider
         if not self._settings.student_keep_warm_enabled:
-            self._student_warm = True
-            self._student_status = "warm"
-            self._student_error = None
+            self._set_status("warm")
             logger.info("Student keep-warm disabled (STUDENT_KEEP_WARM_ENABLED=false).")
             return
         if self._task and not self._task.done():
             return
-        self._stop.clear()
-        self._student_warm = False
-        self._student_status = "warming"
-        self._student_error = None
+        self._stop = asyncio.Event()
+        self._set_status("warming")
         self._task = asyncio.create_task(self._run_loop(), name="student-keep-warm")
 
     async def stop(self) -> None:
-        self._stop.set()
+        if self._stop is not None:
+            self._stop.set()
         if self._task and not self._task.done():
             self._task.cancel()
             try:
@@ -104,174 +120,126 @@ class StudentKeepWarm:
                 pass
         self._task = None
 
+    def _set_status(self, status: StudentStatus, error: Optional[str] = None) -> None:
+        self._student_status = status
+        self._student_warm = status == "warm"
+        self._student_error = error
+
+    # --------------------------------------------------------------- warm-up
     async def warm_for_session(self, *, reason: str = "session_new") -> dict:
-        """Mark warming, ping RPi with published static (+ facts), then warm/error."""
-        self._session_warming = True
-        self._student_warm = False
-        self._student_status = "warming"
-        self._student_error = None
+        """Prefill the current session prefix (status 'warming' while it runs)."""
+        self._set_status("warming")
+        await self._warm(reason=reason)
+        return {
+            "student_status": self._student_status,
+            "student_warm": self._student_warm,
+            "student_error": self._student_error,
+        }
+
+    async def _warm(self, *, reason: str) -> None:
+        if self._prefix_provider is None:
+            return
+        started = time.monotonic()
         try:
-            await self._keep_warm_once(reason=reason, force=True, include_facts=True)
-            return {
-                "student_status": self._student_status,
-                "student_warm": self._student_warm,
-                "student_error": self._student_error,
-            }
-        finally:
-            self._session_warming = False
+            async with self._lock():
+                messages, on_prefix_tokens = await self._prefix_provider()
+                body = await self._post_chat(messages)
+                prompt_eval = body.get("prompt_eval_count")
+                if isinstance(prompt_eval, int) and prompt_eval > 0:
+                    on_prefix_tokens(prompt_eval - GENERATION_PROMPT_TOKENS)
+                self._set_status("warm")
+                logger.info(
+                    "Student warm-up (%s): model=%s elapsed=%.1fs prefix_tokens=%s "
+                    "prefill_s=%.1f load_s=%.1f",
+                    reason,
+                    self._settings.ollama_model,
+                    time.monotonic() - started,
+                    prompt_eval,
+                    (body.get("prompt_eval_duration") or 0) / 1e9,
+                    (body.get("load_duration") or 0) / 1e9,
+                )
+        except Exception as error:
+            detail = f"{type(error).__name__}: {error}".strip(": ")
+            self._set_status("error", detail)
+            logger.warning("Student warm-up (%s) failed: %s", reason, detail)
+
+    async def _post_chat(self, messages: List[dict]) -> dict:
+        timeout = httpx.Timeout(
+            connect=10.0,
+            read=float(self._settings.ollama_read_timeout_seconds),
+            write=30.0,
+            pool=30.0,
+        )
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(
+                self._settings.ollama_url,
+                json={
+                    "model": self._settings.ollama_model,
+                    "messages": messages,
+                    "stream": False,
+                    "keep_alive": self._settings.ollama_keep_alive,
+                    "options": student_options(self._settings, num_predict=1),
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    # -------------------------------------------------------------- watchdog
+    async def _loaded_state(self) -> Optional[dict]:
+        """Loaded Student entry from /api/ps, {} when not loaded, None when unreachable."""
+        base_url = ollama_base_url(self._settings.ollama_url)
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(f"{base_url}/api/ps")
+                resp.raise_for_status()
+                payload: dict[str, Any] = resp.json()
+        except Exception as error:
+            logger.warning("Student /api/ps check failed: %s", error)
+            return None
+        for item in payload.get("models") or []:
+            if isinstance(item, dict) and _model_matches(
+                str(item.get("name") or item.get("model") or ""), self._settings.ollama_model
+            ):
+                return item
+        return {}
 
     async def _run_loop(self) -> None:
-        interval = max(30, self._settings.student_keep_warm_interval_seconds)
+        interval = max(15, self._settings.student_keep_warm_interval_seconds)
         logger.info(
-            "Student keep-warm loop started (interval=%ds, model=%s).",
+            "Student keep-warm started (watchdog every %ds via /api/ps, model=%s, keep_alive=%s).",
             interval,
             self._settings.ollama_model,
+            self._settings.ollama_keep_alive,
         )
-        await self._keep_warm_once(reason="startup", force=True, include_facts=True)
+        await self._warm(reason="startup")
+        assert self._stop is not None
         while not self._stop.is_set():
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
                 break
             except asyncio.TimeoutError:
-                await self._keep_warm_once(reason="interval", force=False, include_facts=False)
-
-    async def _resolve_context(
-        self, client: httpx.AsyncClient
-    ) -> tuple[str, Optional[str]]:
-        try:
-            resp = await client.get(
-                f"{self._settings.context_service_url.rstrip('/')}/api/context",
-                timeout=2.0,
-            )
-            if resp.status_code == 200:
-                body = resp.json()
-                prefix = body.get("static_prefix")
-                dynamic = body.get("dynamic_context")
-                static = (
-                    prefix
-                    if isinstance(prefix, str) and prefix.strip()
-                    else FALLBACK_STUDENT_STATIC_PREFIX
+                pass
+            if self._chat_busy or self._lock().locked():
+                continue
+            state = await self._loaded_state()
+            if state is None:
+                self._ps_failures += 1
+                if self._ps_failures >= 3:
+                    self._set_status("error", "RPi Ollama nie odpowiada (/api/ps).")
+                continue
+            self._ps_failures = 0
+            ctx = state.get("context_length") if state else None
+            if not state:
+                logger.warning("Student model not loaded on the RPi; re-warming.")
+                self._set_status("warming")
+                await self._warm(reason="reload")
+            elif ctx and ctx != self._settings.student_num_ctx:
+                logger.warning(
+                    "Student loaded with num_ctx=%s (expected %s), probably by another client; re-warming.",
+                    ctx,
+                    self._settings.student_num_ctx,
                 )
-                dyn = dynamic if isinstance(dynamic, str) and dynamic.strip() else None
-                return static, dyn
-        except Exception:
-            logger.debug("Context Service unavailable for warmup prefix; using fallback.")
-        return FALLBACK_STUDENT_STATIC_PREFIX, None
-
-    async def _is_model_loaded(self, client: httpx.AsyncClient, base_url: str) -> bool:
-        try:
-            resp = await client.get(f"{base_url}/api/ps", timeout=5.0)
-            if resp.status_code != 200:
-                return False
-            payload: dict[str, Any] = resp.json()
-            models = payload.get("models") or []
-            wanted = self._settings.ollama_model
-            for item in models:
-                if not isinstance(item, dict):
-                    continue
-                name = str(item.get("name") or item.get("model") or "")
-                if _model_matches(name, wanted):
-                    return True
-        except Exception as error:
-            logger.warning("Student /api/ps check failed: %s", error)
-        return False
-
-    async def _ping(
-        self,
-        client: httpx.AsyncClient,
-        *,
-        messages: list[dict[str, str]],
-    ) -> float:
-        started = time.monotonic()
-        resp = await client.post(
-            self._settings.ollama_url,
-            json={
-                "model": self._settings.ollama_model,
-                "messages": messages,
-                "stream": False,
-                "keep_alive": self._settings.ollama_keep_alive,
-                "options": {"num_predict": 1},
-            },
-            timeout=httpx.Timeout(
-                connect=10.0,
-                read=float(self._settings.ollama_read_timeout_seconds),
-                write=30.0,
-                pool=30.0,
-            ),
-        )
-        resp.raise_for_status()
-        return time.monotonic() - started
-
-    async def _keep_warm_once(
-        self,
-        *,
-        reason: str,
-        force: bool,
-        include_facts: bool,
-    ) -> None:
-        if not force:
-            if self._chat_busy:
-                logger.info("Student keep-warm (%s): skipped_busy", reason)
-                return
-            if self._session_warming:
-                logger.info("Student keep-warm (%s): skipped_session_warming", reason)
-                return
-
-        if not force:
-            self._student_status = "warming"
-            self._student_error = None
-
-        base_url = ollama_base_url(self._settings.ollama_url)
-        try:
-            async with self._ollama_lock:
-                async with httpx.AsyncClient() as client:
-                    static_prefix, dynamic = await self._resolve_context(client)
-                    loaded = await self._is_model_loaded(client, base_url)
-                    elapsed = await self._ping(
-                        client,
-                        messages=[
-                            {"role": "system", "content": static_prefix},
-                            {"role": "user", "content": PING_USER_MESSAGE},
-                        ],
-                    )
-                    facts_elapsed = 0.0
-                    if include_facts and dynamic:
-                        facts_elapsed = await self._ping(
-                            client,
-                            messages=[
-                                {"role": "system", "content": static_prefix},
-                                {
-                                    "role": "user",
-                                    "content": (
-                                        f"{dynamic}\n\n"
-                                        "Potwierdź jednym słowem, że masz kontekst domu."
-                                    ),
-                                },
-                            ],
-                        )
-                    self._student_warm = True
-                    self._student_status = "warm"
-                    self._student_error = None
-                    self._last_ok_at = time.monotonic()
-                    state = "reloaded" if not loaded else "loaded"
-                    logger.info(
-                        "Student keep-warm (%s): %s model=%s elapsed=%.1fs "
-                        "facts_ping=%.1fs keep_alive=%s facts_chars=%d",
-                        reason,
-                        state,
-                        self._settings.ollama_model,
-                        elapsed,
-                        facts_elapsed,
-                        self._settings.ollama_keep_alive,
-                        len(dynamic) if dynamic else 0,
-                    )
-        except Exception as error:
-            self._student_warm = False
-            self._student_status = "error"
-            self._student_error = str(error)
-            logger.warning(
-                "Student keep-warm (%s) failed for %s: %s",
-                reason,
-                self._settings.ollama_model,
-                error,
-            )
+                self._set_status("warming")
+                await self._warm(reason="options_mismatch")
+            elif self._student_status == "error":
+                await self._warm(reason="recover")

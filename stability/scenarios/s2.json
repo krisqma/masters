@@ -1,0 +1,99 @@
+{
+ "steps": [
+  {
+   "type": "wait_ready"
+  },
+  {
+   "type": "mark",
+   "name": "S2"
+  },
+  {
+   "type": "new_session",
+   "reason": "manual"
+  },
+  {
+   "type": "wait_ready"
+  },
+  {
+   "type": "ask",
+   "text": "Cześć powiedz mi coś o temperaturze w mieszkaniu.",
+   "label": "S2a-1"
+  },
+  {
+   "type": "wait",
+   "seconds": 20
+  },
+  {
+   "type": "ask",
+   "text": "Jaka jest wilgotność w łazience?",
+   "label": "S2a-2"
+  },
+  {
+   "type": "wait",
+   "seconds": 20
+  },
+  {
+   "type": "ask",
+   "text": "Czy w małym pokoju ktoś jest?",
+   "label": "S2a-3"
+  },
+  {
+   "type": "wait",
+   "seconds": 20
+  },
+  {
+   "type": "mark",
+   "name": "S2a_wait_ping"
+  },
+  {
+   "type": "wait_for_proxy",
+   "kinds": [
+    "ping_static"
+   ],
+   "phase": "end",
+   "max_wait_s": 700,
+   "then_delay": 5
+  },
+  {
+   "type": "ask",
+   "text": "A w dużym pokoju?",
+   "label": "S2a-after-ping"
+  },
+  {
+   "type": "wait",
+   "seconds": 20
+  },
+  {
+   "type": "ask",
+   "text": "Ok, a powiedz mi coś o danych obecności w różnych pokojach.",
+   "label": "S2a-after-ping+1"
+  },
+  {
+   "type": "mark",
+   "name": "S2b_wait_ping"
+  },
+  {
+   "type": "wait_for_proxy",
+   "kinds": [
+    "ping_static"
+   ],
+   "phase": "start",
+   "max_wait_s": 700,
+   "then_delay": 0
+  },
+  {
+   "type": "ask",
+   "text": "Jaka jest temperatura w łazience?",
+   "label": "S2b-during-ping"
+  },
+  {
+   "type": "wait",
+   "seconds": 20
+  },
+  {
+   "type": "ask",
+   "text": "Czy powinienem się czymś martwić w domku?",
+   "label": "S2b-during-ping+1"
+  }
+ ]
+}

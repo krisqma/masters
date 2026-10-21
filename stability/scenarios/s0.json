@@ -1,0 +1,41 @@
+{
+ "steps": [
+  {
+   "type": "wait_ready"
+  },
+  {
+   "type": "mark",
+   "name": "S0"
+  },
+  {
+   "type": "ask",
+   "text": "Dzień dobry!",
+   "label": "S0-1"
+  },
+  {
+   "type": "wait",
+   "seconds": 5
+  },
+  {
+   "type": "ask",
+   "text": "Jaka jest temperatura w łazience?",
+   "label": "S0-2"
+  },
+  {
+   "type": "wait",
+   "seconds": 5
+  },
+  {
+   "type": "transcribe_and_ask",
+   "file": "../benchmark/test.mp3",
+   "label": "S0-stt"
+  },
+  {
+   "type": "new_session",
+   "reason": "manual"
+  },
+  {
+   "type": "wait_ready"
+  }
+ ]
+}

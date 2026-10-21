@@ -1,0 +1,74 @@
+{
+ "steps": [
+  {
+   "type": "wait_ready"
+  },
+  {
+   "type": "mark",
+   "name": "S3"
+  },
+  {
+   "type": "ask",
+   "text": "Dzień dobry!",
+   "label": "S3-1"
+  },
+  {
+   "type": "wait",
+   "seconds": 20
+  },
+  {
+   "type": "ask",
+   "text": "Jaka jest temperatura w łazience?",
+   "label": "S3-2"
+  },
+  {
+   "type": "wait",
+   "seconds": 20
+  },
+  {
+   "type": "ask",
+   "text": "A w dużym pokoju?",
+   "label": "S3-3"
+  },
+  {
+   "type": "wait",
+   "seconds": 20
+  },
+  {
+   "type": "mark",
+   "name": "S3_silence"
+  },
+  {
+   "type": "wait",
+   "seconds": 660,
+   "note": "idle -> rotation"
+  },
+  {
+   "type": "ask",
+   "text": "Ok, jakieś anomalie, coś dziwnego się dzieje teraz w danych, czy sytuacja jest spokojna? Oceń.",
+   "label": "S3-after-rotation"
+  },
+  {
+   "type": "wait",
+   "seconds": 15
+  },
+  {
+   "type": "new_session",
+   "reason": "manual"
+  },
+  {
+   "type": "ask",
+   "text": "Jaka jest wilgotność w łazience?",
+   "label": "S3-during-warm",
+   "gate": false
+  },
+  {
+   "type": "wait_ready"
+  },
+  {
+   "type": "ask",
+   "text": "Jaka jest wilgotność w łazience?",
+   "label": "S3-after-warm"
+  }
+ ]
+}

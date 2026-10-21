@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 
 def _as_bool(value: Optional[str], default: bool) -> bool:
@@ -20,6 +20,34 @@ def _as_int(value: Optional[str], default: int) -> int:
         return int(value)
     except ValueError:
         return default
+
+
+def _as_float(value: Optional[str], default: float) -> float:
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
+def _as_optional_int(value: Optional[str]) -> Optional[int]:
+    if value is None or not value.strip():
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _as_keep_alive(value: Optional[str], default: Union[int, str]) -> Union[int, str]:
+    """Ollama wants a number for "forever" (-1); durations stay strings ("30m")."""
+    if value is None or not value.strip():
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return value.strip()
 
 
 def _as_csv_list(value: Optional[str], default: List[str]) -> List[str]:
@@ -58,12 +86,25 @@ class Settings:
     cors_origins: List[str]
     ollama_url: str
     ollama_model: str
-    ollama_keep_alive: str
+    ollama_keep_alive: Union[int, str]
     ollama_read_timeout_seconds: int
     chat_history_max_messages: int
     student_keep_warm_enabled: bool
     student_keep_warm_interval_seconds: int
     session_idle_rotate_seconds: int
+    # gemma3 sliding window: prompt + reply must stay within it (see stability/RAPORT.md)
+    student_ctx_window: int
+    student_budget_margin: int
+    student_num_predict_max: int
+    student_num_predict_min: int
+    student_history_trim_ratio: float
+    student_history_keep_max_tokens: int
+    student_temperature: float
+    student_top_p: float
+    student_repeat_penalty: float
+    student_num_ctx: int
+    student_num_batch: Optional[int]
+    student_num_thread: Optional[int]
     context_service_url: str
     tts_voice: str
     tts_rate: str
@@ -75,24 +116,19 @@ DEFAULT_CORS_ORIGINS = [
     "http://localhost:5173",
 ]
 
-# Fallback when Context Service is down — must match context_service STUDENT_STATIC_PREFIX.
+# Fallback when Context Service is down; must be byte-identical to context_service STUDENT_STATIC_PREFIX.
 FALLBACK_STUDENT_STATIC_PREFIX = """\
-Jesteś Wilguś — przyjazny ptasi gospodarz domku gościnnego (wilga = oriole; „Wilguś” to zdrobnienie).
-Mówisz o sobie w pierwszej osobie, krótko i ciepło, po polsku.
-Pomagasz gościowi zrozumieć komfort domu (temperatura, wilgotność, ruch, światło) na podstawie danych z czujników.
-Nie sterujesz urządzeniami i nie wykonujesz akcji — tylko informujesz i rozmawiasz.
-Gdy pytanie NIE dotyczy stanu domu — zwykle 1–2 zdania, bez liczb z czujników.
-Gdy pytanie dotyczy stanu domu, pomieszczenia, komfortu, odczytów albo overview — cytuj liczby i jednostki WYŁĄCZNIE z bloku „Stan mieszkania” w kontekście.
-Przy pytaniu o wszystkie pomieszczenia, overview domu albo tę samą metrykę w całym domku — wymień WSZYSTKIE dostępne wartości z faktów dla wszystkich pokoi z listy; nie zastępuj liczb słowami „w normie” / „prawidłowa”.
-Sekcja „Findings” (jeśli jest) to opcjonalne ostrzeżenia o anomaliach — możesz je wspomnieć, ale nie zastępują faktów.
-Nie doklejaj odczytów „przy okazji” do odpowiedzi o czymś innym.
-Gdy pytają kim jesteś, skąd nazwa, gdzie jesteś albo o co chodzi w domku — odpowiadaj z tej persony, BEZ liczb z czujników.
-Gdy wypowiedź jest niejasna, bezsensowna albo wygląda na błąd STT — nie zgaduj intencji sensorowej; krótko poproś o powtórzenie lub odpowiedz w charakterze bez odczytów.
-O stanie domu nie zgaduj, nie uśredniaj i nie zmyślaj metryk ani pomieszczeń spoza kontekstu; przy braku danych w faktach powiedz to wprost.
-Gdy pytają z jakich pomieszczeń składa się mieszkanie — wymień WSZYSTKIE z listy „Pomieszczenia mieszkania” w kontekście, nic nie pomijaj i nic nie dodawaj.
-Jeśli dane są sprzeczne lub oznaczone jako stare, zaznacz niepewność.
-Uwzględniaj wcześniejsze wiadomości w rozmowie (dopowiedzenia, korektury).
-Przy literówkach STT mapuj nazwy na pomieszczenia z listy w kontekście (np. „Sanon” → najbliższa sensowna nazwa z listy), gdy sens jest oczywisty."""
+Jesteś Wilguś (zdrobnienie od wilgi, ptaka), przyjazny gospodarz domku gościnnego. Mów krótko, ciepło, po polsku, w 1. osobie. Informujesz o komforcie domu z czujników, niczym nie sterujesz.
+NAJWAŻNIEJSZE: liczbę podajesz TYLKO wtedy, gdy stoi w bloku „Stan mieszkania” przy tym pokoju. Gdy jej tam nie ma albo jest „brak …”, powiedz, że nie masz tego odczytu. NIGDY nie wymyślaj liczb ani pokoi.
+Zasady:
+- Powitanie, rozmowa, pytanie o Ciebie lub domek, niezrozumiała wypowiedź: 1-2 zdania z persony, BEZ liczb z czujników.
+- Niejasne lub błąd STT: poproś o powtórzenie; literówki (np. „Sanon”) mapuj na najbliższy pokój z listy.
+- O cały dom: każdy pokój z listy osobno, liczbami albo „brak odczytu”, nie „w normie”.
+- Pomieszczenia: wszystkie z listy, nic więcej.
+- „Findings”: opcjonalne anomalie, nie zastępują faktów.
+- Nie uśredniaj; przy danych sprzecznych lub starych zaznacz niepewność.
+- Pamiętaj wcześniejsze wiadomości i korekty.
+Licznik = energia zużyta łącznie; szafka IoT = czujnik w szafce technicznej. Odpowiadaj pełnymi słowami."""
 
 
 def get_settings() -> Settings:
@@ -109,19 +145,37 @@ def get_settings() -> Settings:
         cors_origins=_as_csv_list(os.getenv("CORS_ORIGINS"), DEFAULT_CORS_ORIGINS),
         ollama_url=os.getenv("OLLAMA_URL", "http://192.168.1.173:11434/api/chat"),
         ollama_model=os.getenv("OLLAMA_MODEL", "gemma3:4b"),
-        ollama_keep_alive=os.getenv("OLLAMA_KEEP_ALIVE", "30m"),
-        ollama_read_timeout_seconds=_as_int(os.getenv("OLLAMA_READ_TIMEOUT_SECONDS"), 120),
-        # Last N user/assistant turns sent with each chat (keeps RPi TTFT in check).
-        chat_history_max_messages=_as_int(os.getenv("CHAT_HISTORY_MAX_MESSAGES"), 6),
+        # -1 = keep the Student loaded forever (no inference pings needed to keep it warm).
+        ollama_keep_alive=_as_keep_alive(os.getenv("OLLAMA_KEEP_ALIVE"), -1),
+        # Worst case under the token budget: cold prefill of ~850 tokens at ~7 tok/s + reply.
+        ollama_read_timeout_seconds=_as_int(os.getenv("OLLAMA_READ_TIMEOUT_SECONDS"), 180),
+        # Hard cap on history messages; the real limit is the token budget below.
+        chat_history_max_messages=_as_int(os.getenv("CHAT_HISTORY_MAX_MESSAGES"), 20),
         student_keep_warm_enabled=_as_bool(os.getenv("STUDENT_KEEP_WARM_ENABLED"), True),
-        # Ping below OLLAMA_KEEP_ALIVE so the model + system prefix stay hot.
+        # How often /api/ps is checked (no inference) to re-warm after an Ollama restart.
         student_keep_warm_interval_seconds=_as_int(
-            os.getenv("STUDENT_KEEP_WARM_INTERVAL_SECONDS"), 600
+            os.getenv("STUDENT_KEEP_WARM_INTERVAL_SECONDS"), 60
         ),
         # After this idle time, frontend should call /api/session/new (advance + warmup).
         session_idle_rotate_seconds=_as_int(
             os.getenv("SESSION_IDLE_ROTATE_SECONDS"), 600
         ),
+        student_ctx_window=_as_int(os.getenv("STUDENT_CTX_WINDOW"), 1024),
+        student_budget_margin=_as_int(os.getenv("STUDENT_BUDGET_MARGIN"), 32),
+        student_num_predict_max=_as_int(os.getenv("STUDENT_NUM_PREDICT_MAX"), 128),
+        student_num_predict_min=_as_int(os.getenv("STUDENT_NUM_PREDICT_MIN"), 64),
+        # When history must be trimmed, cut down to this share of its budget (hysteresis).
+        student_history_trim_ratio=_as_float(os.getenv("STUDENT_HISTORY_TRIM_RATIO"), 0.5),
+        # ...but keep at most this much history after a trim: the kept turns are
+        # re-prefilled at ~7 tok/s, so this caps the cost of a trim turn (~16 s).
+        student_history_keep_max_tokens=_as_int(os.getenv("STUDENT_HISTORY_KEEP_MAX_TOKENS"), 120),
+        # Generation options from the thesis (tab:rekomendacja_produkcyjna).
+        student_temperature=_as_float(os.getenv("STUDENT_TEMPERATURE"), 0.2),
+        student_top_p=_as_float(os.getenv("STUDENT_TOP_P"), 0.9),
+        student_repeat_penalty=_as_float(os.getenv("STUDENT_REPEAT_PENALTY"), 1.05),
+        student_num_ctx=_as_int(os.getenv("STUDENT_NUM_CTX"), 2048),
+        student_num_batch=_as_optional_int(os.getenv("STUDENT_NUM_BATCH")),
+        student_num_thread=_as_optional_int(os.getenv("STUDENT_NUM_THREAD")),
         context_service_url=os.getenv("CONTEXT_SERVICE_URL", "http://127.0.0.1:8001"),
         tts_voice=os.getenv("TTS_VOICE", "pl-PL-ZofiaNeural"),
         tts_rate=os.getenv("TTS_RATE", "+0%"),

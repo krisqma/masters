@@ -1,0 +1,57 @@
+{
+ "steps": [
+  {
+   "type": "wait_ready"
+  },
+  {
+   "type": "mark",
+   "name": "V2_rotation"
+  },
+  {
+   "type": "ask",
+   "text": "Dzień dobry!",
+   "label": "V2-1"
+  },
+  {
+   "type": "wait",
+   "seconds": 15
+  },
+  {
+   "type": "ask",
+   "text": "Jaka jest temperatura w łazience?",
+   "label": "V2-2"
+  },
+  {
+   "type": "wait",
+   "seconds": 15
+  },
+  {
+   "type": "new_session",
+   "reason": "manual"
+  },
+  {
+   "type": "ask",
+   "text": "Cześć powiedz mi coś o temperaturze w mieszkaniu.",
+   "label": "V2-during-warm",
+   "gate": false
+  },
+  {
+   "type": "wait",
+   "seconds": 15
+  },
+  {
+   "type": "ask",
+   "text": "A w dużym pokoju?",
+   "label": "V2-after-warm"
+  },
+  {
+   "type": "wait",
+   "seconds": 15
+  },
+  {
+   "type": "ask",
+   "text": "Ok, a powiedz mi coś o danych obecności w różnych pokojach.",
+   "label": "V2-3"
+  }
+ ]
+}

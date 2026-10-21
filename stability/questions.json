@@ -1,0 +1,65 @@
+{
+ "source": "Cursor transcripts 2026-07-26 (8518e19b) and 2026-07-30 (98eaf0d3); variants marked by not appearing there",
+ "replay_c": [
+  "Glocka! Zostawiony serce! No, no, no!",
+  "Powiedz mi coś o danych dotyczących wilgotności w damku.",
+  "No dobra, ale chciałbym, żeby to było bardziej o wszystkich pomieszczeniach, odkołaśniętych takich oberwisk sytuacji.",
+  "Dzień dobry!",
+  "Cześć powiedz mi coś o temperaturze w mieszkaniu.",
+  "Ok, a powiedz mi coś o danych obecności w różnych pokojach.",
+  "Ok, jakieś anomalie, coś dziwnego się dzieje teraz w danych, czy sytuacja jest spokojna? Oceń.",
+  "Ok, a jakie są ciśnienia w innych pomieszczeniach w takim razie? Daj mi ciśnienie dla każdego pomieszczenia, poproszę.",
+  "Ok, a powiedz mi, które okna są otwarte."
+ ],
+ "replay_a": [
+  "Powiedz mi jaki jest poziom temperatury w Sanonie.",
+  "Chodziło mi oczywiście o salon, pomieszczenie w domku, salon.",
+  "Ok, to przedstaw mi generalne informacje o temperaturze w domku.",
+  "Nie odpowiedziałaś na moje pytanie, nie odpowiedziałaś na to, czy coś ma mnie niepokoić, czy widzisz jakieś dziwne rzeczy w danych, powiedz najdziwniejsze, co może, co się teraz dzieje.",
+  "Co to jest za smorzoność powietrza?",
+  "Ale co to jest smorzoność albo zasmożoność powietrza? Co to jest zadana? O co chodzi? To po polsku nie mam przyszłego słowa."
+ ],
+ "replay_b": [
+  "Coś o tym, kim jesteś, dlaczego jesteś takim ptakiem, gdzie ty się znajdujesz, o co chodzi w ogóle, skąd nazywa Wilgo i Wilga, co tutaj dzieje, co ja robię w tym danku.",
+  "Tak, tych, którzy mogą. Doskonały, idę przecież od siebie, chcę tego w środku, chcę tego więcej, więcej. W sensie piękne, a nie jak kiedyś.",
+  "Powiedz mi, z jakich pomieszczeń się składa to moje mieszkanie?"
+ ],
+ "bank": {
+  "status_single": [
+   "Jaka jest temperatura w łazience?",
+   "Jaka jest wilgotność w łazience?",
+   "A w dużym pokoju?",
+   "Czy w małym pokoju ktoś jest?",
+   "Jakie jest oświetlenie w korytarzu?",
+   "Powiedz mi jaki jest poziom temperatury w Sanonie."
+  ],
+  "status_all_rooms": [
+   "Cześć powiedz mi coś o temperaturze w mieszkaniu.",
+   "Ok, a powiedz mi coś o danych obecności w różnych pokojach.",
+   "Ok, a jakie są ciśnienia w innych pomieszczeniach w takim razie? Daj mi ciśnienie dla każdego pomieszczenia, poproszę.",
+   "No dobra, ale chciałbym, żeby to było bardziej o wszystkich pomieszczeniach, odkołaśniętych takich oberwisk sytuacji.",
+   "Ok, to przedstaw mi generalne informacje o temperaturze w domku."
+  ],
+  "anomalies": [
+   "Ok, jakieś anomalie, coś dziwnego się dzieje teraz w danych, czy sytuacja jest spokojna? Oceń.",
+   "Nie odpowiedziałaś na moje pytanie, nie odpowiedziałaś na to, czy coś ma mnie niepokoić, czy widzisz jakieś dziwne rzeczy w danych, powiedz najdziwniejsze, co może, co się teraz dzieje.",
+   "Czy powinienem się czymś martwić w domku?"
+  ],
+  "persona_smalltalk": [
+   "Dzień dobry!",
+   "Coś o tym, kim jesteś, dlaczego jesteś takim ptakiem, gdzie ty się znajdujesz, o co chodzi w ogóle, skąd nazywa Wilgo i Wilga, co tutaj dzieje, co ja robię w tym danku.",
+   "Powiedz mi, z jakich pomieszczeń się składa to moje mieszkanie?",
+   "Co to w ogole daje?"
+  ],
+  "followup_correction": [
+   "Chodziło mi oczywiście o salon, pomieszczenie w domku, salon.",
+   "A co z wilgotnością tam?",
+   "Możesz powtórzyć ostatnią liczbę?"
+  ],
+  "stt_garbage": [
+   "Glocka! Zostawiony serce! No, no, no!",
+   "Tak, tych, którzy mogą. Doskonały, idę przecież od siebie, chcę tego w środku, chcę tego więcej, więcej. W sensie piękne, a nie jak kiedyś.",
+   "Co to jest za smorzoność powietrza?"
+  ]
+ }
+}

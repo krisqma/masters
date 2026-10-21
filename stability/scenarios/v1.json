@@ -1,0 +1,200 @@
+{
+ "steps": [
+  {
+   "type": "wait_ready"
+  },
+  {
+   "type": "mark",
+   "name": "V1"
+  },
+  {
+   "type": "ask",
+   "text": "Glocka! Zostawiony serce! No, no, no!",
+   "label": "V1-1"
+  },
+  {
+   "type": "wait",
+   "seconds": 25
+  },
+  {
+   "type": "ask",
+   "text": "Powiedz mi coś o danych dotyczących wilgotności w damku.",
+   "label": "V1-2"
+  },
+  {
+   "type": "wait",
+   "seconds": 40
+  },
+  {
+   "type": "ask",
+   "text": "No dobra, ale chciałbym, żeby to było bardziej o wszystkich pomieszczeniach, odkołaśniętych takich oberwisk sytuacji.",
+   "label": "V1-3"
+  },
+  {
+   "type": "wait",
+   "seconds": 20
+  },
+  {
+   "type": "ask",
+   "text": "Dzień dobry!",
+   "label": "V1-4"
+  },
+  {
+   "type": "wait",
+   "seconds": 30
+  },
+  {
+   "type": "ask",
+   "text": "Cześć powiedz mi coś o temperaturze w mieszkaniu.",
+   "label": "V1-5"
+  },
+  {
+   "type": "wait",
+   "seconds": 55
+  },
+  {
+   "type": "ask",
+   "text": "Ok, a powiedz mi coś o danych obecności w różnych pokojach.",
+   "label": "V1-6"
+  },
+  {
+   "type": "wait",
+   "seconds": 35
+  },
+  {
+   "type": "ask",
+   "text": "Ok, jakieś anomalie, coś dziwnego się dzieje teraz w danych, czy sytuacja jest spokojna? Oceń.",
+   "label": "V1-7"
+  },
+  {
+   "type": "wait",
+   "seconds": 25
+  },
+  {
+   "type": "ask",
+   "text": "Ok, a jakie są ciśnienia w innych pomieszczeniach w takim razie? Daj mi ciśnienie dla każdego pomieszczenia, poproszę.",
+   "label": "V1-8"
+  },
+  {
+   "type": "wait",
+   "seconds": 40
+  },
+  {
+   "type": "ask",
+   "text": "Ok, a powiedz mi, które okna są otwarte.",
+   "label": "V1-9"
+  },
+  {
+   "type": "wait",
+   "seconds": 20
+  },
+  {
+   "type": "ask",
+   "text": "Jaka jest temperatura w łazience?",
+   "label": "V1-10"
+  },
+  {
+   "type": "wait",
+   "seconds": 30
+  },
+  {
+   "type": "ask",
+   "text": "A w dużym pokoju?",
+   "label": "V1-11"
+  },
+  {
+   "type": "wait",
+   "seconds": 55
+  },
+  {
+   "type": "ask",
+   "text": "A co z wilgotnością tam?",
+   "label": "V1-12"
+  },
+  {
+   "type": "wait",
+   "seconds": 35
+  },
+  {
+   "type": "ask",
+   "text": "Ok, to przedstaw mi generalne informacje o temperaturze w domku.",
+   "label": "V1-13"
+  },
+  {
+   "type": "wait",
+   "seconds": 25
+  },
+  {
+   "type": "ask",
+   "text": "Czy powinienem się czymś martwić w domku?",
+   "label": "V1-14"
+  },
+  {
+   "type": "wait",
+   "seconds": 40
+  },
+  {
+   "type": "ask",
+   "text": "Możesz powtórzyć ostatnią liczbę?",
+   "label": "V1-15"
+  },
+  {
+   "type": "wait",
+   "seconds": 20
+  },
+  {
+   "type": "ask",
+   "text": "Czy powinienem się czymś martwić w domku?",
+   "label": "V1-x1"
+  },
+  {
+   "type": "wait",
+   "seconds": 25
+  },
+  {
+   "type": "ask",
+   "text": "Powiedz mi, z jakich pomieszczeń się składa to moje mieszkanie?",
+   "label": "V1-x2"
+  },
+  {
+   "type": "wait",
+   "seconds": 40
+  },
+  {
+   "type": "ask",
+   "text": "Jaka jest wilgotność w łazience?",
+   "label": "V1-x3"
+  },
+  {
+   "type": "wait",
+   "seconds": 20
+  },
+  {
+   "type": "ask",
+   "text": "A ciśnienie?",
+   "label": "V1-x4"
+  },
+  {
+   "type": "wait",
+   "seconds": 30
+  },
+  {
+   "type": "ask",
+   "text": "Glocka! Zostawiony serce! No, no, no!",
+   "label": "V1-x5"
+  },
+  {
+   "type": "wait",
+   "seconds": 25
+  },
+  {
+   "type": "ask",
+   "text": "Ok, jakieś anomalie, coś dziwnego się dzieje teraz w danych, czy sytuacja jest spokojna? Oceń.",
+   "label": "V1-x6"
+  },
+  {
+   "type": "wait",
+   "seconds": 40
+  }
+ ]
+}

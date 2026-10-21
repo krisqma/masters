@@ -13,6 +13,29 @@ logger = logging.getLogger(__name__)
 # Exact one-line reply when Teacher finds nothing noteworthy.
 NO_ANOMALY_SENTINEL = "BRAK_ANOMALII"
 
+# Findings go into the Student prompt, which must fit gemma3's 1024-token window.
+MAX_FINDINGS_CHARS = 160
+
+
+def cap_findings(text: str, max_chars: int = MAX_FINDINGS_CHARS) -> str:
+    """Keep whole lines up to max_chars; a single over-long line is cut at a word boundary."""
+    kept: list[str] = []
+    used = 0
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        extra = len(line) + (1 if kept else 0)
+        if used + extra <= max_chars:
+            kept.append(line)
+            used += extra
+            continue
+        if not kept:
+            cut = line[: max_chars - 3].rsplit(" ", 1)[0].rstrip(",;:")
+            kept.append(cut + "...")
+        break
+    return "\n".join(kept)
+
 
 @dataclass(frozen=True)
 class TeacherInsight:
@@ -29,7 +52,7 @@ TEACHER_SYSTEM_PROMPT = (
     "Szukaj m.in.: skrajnych temperatur lub wilgotności, otwartych okien/drzwi, dużego zużycia mocy/energii, "
     "obecności w nietypowej porze, słabej jakości powietrza (wysoki VOC), sprzecznych odczytów. "
     "Używaj tylko nazw pomieszczeń i liczb ze snapshota — nic nie zmyślaj. "
-    "Gdy znajdziesz anomalie: wypisz je zwięźle (1–4 krótkie punkty lub zdania) z konkretnymi wartościami. "
+    "Gdy znajdziesz anomalie: wypisz najważniejsze, maksymalnie 2 krótkie punkty (razem do 150 znaków) z konkretnymi wartościami. "
     "Gdy NIC nietypowego nie ma — odpowiedz DOKŁADNIE jedną linią: "
     f"{NO_ANOMALY_SENTINEL} "
     "(bez innych słów, bez streszczenia, bez zdań w stylu „wszystko w normie” / „prawidłowa”). "
@@ -52,7 +75,7 @@ def normalize_findings(raw: str) -> Optional[str]:
     filtered = [ln for ln in lines if ln.upper() != NO_ANOMALY_SENTINEL]
     if not filtered:
         return None
-    return "\n".join(filtered)
+    return cap_findings("\n".join(filtered)) or None
 
 
 async def ask_teacher(

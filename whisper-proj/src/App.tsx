@@ -44,6 +44,9 @@ const now = () =>
     second: '2-digit',
   })
 
+const newClientSessionId = () =>
+  globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`
+
 const createMessage = (role: ChatRole, content: string): ChatMessage => {
   const fallbackId = `${Date.now()}-${Math.random().toString(16).slice(2)}`
   const id = globalThis.crypto?.randomUUID?.() ?? fallbackId
@@ -81,6 +84,8 @@ function App() {
   const enterFollowUpAfterReplyRef = useRef(false)
   const statusRef = useRef<AppStatus>(status)
   const lastActivityAtRef = useRef(Date.now())
+  // New id = new conversation for the backend history (page load, "Nowa rozmowa").
+  const clientSessionIdRef = useRef(newClientSessionId())
   const idleRotateMsRef = useRef(DEFAULT_IDLE_ROTATE_MS)
   const sessionRotateInFlightRef = useRef(false)
 
@@ -241,6 +246,7 @@ function App() {
 
         await streamChatReply(transcript, {
           history,
+          clientSessionId: clientSessionIdRef.current,
           onChunk: (chunk) => {
             if (!assistantMessageId) {
               const assistantMessage = createMessage('wilga', '')
@@ -321,6 +327,7 @@ function App() {
       }
 
       sessionRotateInFlightRef.current = true
+      clientSessionIdRef.current = newClientSessionId()
       speechQueueRef.current?.cancel()
       awaitingSpeechIdleRef.current = false
       streamFinishedRef.current = true

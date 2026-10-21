@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import csv
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,8 @@ class SensorSnapshot:
     cursor: int  # current position in the CSV
     total_rows: int
     apartment_rooms: Optional[List[str]] = None
+    # Structured readings (room_key, device_desc, metric, formatted) for the compact Student format.
+    entries: List[Tuple[str, str, str, str]] = field(default_factory=list)
 
     def to_text(self) -> str:
         """Full snapshot text for the Teacher (grouped by room)."""
@@ -74,7 +76,11 @@ class SensorSnapshot:
         return "\n".join(lines)
 
     def to_student_facts_text(self) -> str:
-        """Deterministic bullet list for the Student (benchmark-style facts)."""
+        """Compact per-room facts for the Student (token budget, see render_student_facts)."""
+        return render_student_facts(self)[0]
+
+    def to_student_facts_text_verbose(self) -> str:
+        """Legacy bullet list (one line per reading), kept for tests and A/B comparison."""
         if not self.readings:
             return f"Stan mieszkania na {self.timestamp} UTC:\n(brak odczytów z czujników)"
 
@@ -175,6 +181,7 @@ def _build_snapshot(
 
     timestamp = row[0] if row[0] else "?"
     readings: Dict[str, Dict[str, str]] = {}
+    entries: List[Tuple[str, str, str, str]] = []
 
     for i, cell in enumerate(row):
         if i >= len(col_info) or col_info[i] is None:
@@ -191,6 +198,7 @@ def _build_snapshot(
         label_metric = METRIC_LABELS.get(metric, metric)
         label = f"{device_desc} – {label_metric}"
         readings.setdefault(room, {})[label] = formatted
+        entries.append((room, device_desc, metric, formatted))
 
     return SensorSnapshot(
         timestamp=timestamp,
@@ -199,7 +207,195 @@ def _build_snapshot(
         cursor=row_number,
         total_rows=total_rows,
         apartment_rooms=None,
+        entries=entries,
     )
+
+
+# ---------------------------------------------------------------------------
+# Compact Student facts
+#
+# The Student (gemma3 on the RPi) must keep prompt + reply within its 1024-token
+# sliding window, so facts are rendered one line per room with short labels.
+# Every ambient / contact / energy reading is kept; only device-internal chip
+# temperatures ("... device" + temperature) are dropped (not room comfort).
+# ---------------------------------------------------------------------------
+
+STUDENT_ROOM_ORDER = ("bathroom", "hallway", "large_room", "small_room", "outside", "localization")
+
+# Metrics guests ask about most; their absence is written out explicitly.
+CORE_METRICS = ("temperature", "humidity", "pressure")
+
+AMBIENT_ORDER = ("temperature", "humidity", "pressure", "voc", "occupancy", "illuminance")
+AMBIENT_LABELS: Dict[str, str] = {
+    "temperature": "temp.",
+    "humidity": "wilg.",
+    "pressure": "ciśn.",
+    "voc": "VOC",
+    "occupancy": "obecność",
+    "illuminance": "oświetlenie",
+}
+# Short source tags, used only when a room has the same metric from >1 sensor.
+SOURCE_TAGS: Dict[str, str] = {
+    "climate sensor": "klimat",
+    "air quality sensor": "jakość pow.",
+    "motion sensor": "ruch",
+}
+ENERGY_NAMES: Dict[str, str] = {
+    "boiler": "bojler",
+    "heater": "grzejnik",
+    "outlet": "gniazdko",
+    "lights": "światła",
+}
+CONTACT_NAMES: Dict[str, Tuple[str, str]] = {
+    # name -> (label, grammatical ending for zamknięt-/otwart-)
+    "window": ("okno", "e"),
+    "door": ("drzwi", "e"),
+    "fridge": ("lodówka", "a"),
+}
+
+
+def _split_device(device_desc: str) -> Tuple[str, Optional[str], str, bool]:
+    """'window 1 contact sensor device' -> ('window', '1', 'contact sensor', True)."""
+    is_internal = device_desc.endswith(" device")
+    base = device_desc[: -len(" device")] if is_internal else device_desc
+    words = base.split()
+    name = words[0] if words else base
+    number = words[1] if len(words) > 1 and words[1].isdigit() else None
+    kind = " ".join(words[2:] if number else words[1:])
+    return name, number, kind, is_internal
+
+
+def is_student_entry(device_desc: str, metric: str) -> bool:
+    """Device-internal chip temperatures are not shown to the Student."""
+    return not (_split_device(device_desc)[3] and metric == "temperature")
+
+
+def energy_kwh(formatted_wh: str) -> str:
+    """Cumulative meter '84458.8 Wh' -> '84.5 kWh' (digits are tokens; 0.1 Wh adds nothing)."""
+    try:
+        return f"{float(formatted_wh.split()[0]) / 1000:.1f} kWh"
+    except (ValueError, IndexError):
+        return formatted_wh
+
+
+def _contact_text(label: str, ending: str, formatted: str) -> str:
+    if formatted == "zamknięty":
+        return f"{label} zamknięt{ending}"
+    if formatted == "otwarty":
+        return f"{label} otwart{ending}"
+    return f"{label} {formatted}"
+
+
+def _render_room(entries: List[Tuple[str, str, str, str]]) -> Tuple[str, List[Tuple[str, str, str, str]]]:
+    """Render one room's entries; returns (text, entries actually rendered)."""
+    rendered: List[Tuple[str, str, str, str]] = []
+    parts: List[str] = []
+
+    # Ambient metrics, merged across sensors.
+    by_metric: Dict[str, List[Tuple[str, str, str, str]]] = {}
+    for e in entries:
+        if e[2] in AMBIENT_LABELS:
+            by_metric.setdefault(e[2], []).append(e)
+    for metric in AMBIENT_ORDER:
+        items = sorted(by_metric.get(metric, []), key=lambda e: e[1])
+        if not items:
+            continue
+        values = []
+        for e in items:
+            name, _num, kind, _ = _split_device(e[1])
+            tag = "szafka IoT" if name == "iot-cabinet" else (
+                SOURCE_TAGS.get(kind, e[1]) if len(items) > 1 else None
+            )
+            values.append(f"{e[3]} ({tag})" if tag else e[3])
+            rendered.append(e)
+        sep = " " if metric != "occupancy" else ": "
+        parts.append(f"{AMBIENT_LABELS[metric]}{sep}{', '.join(values)}")
+
+    # Contacts (windows, doors, fridge) with optional fridge state.
+    contacts = sorted((e for e in entries if e[2] in ("contact", "state")), key=lambda e: (e[1], e[2]))
+    windows_in_room = {_split_device(e[1])[1] for e in contacts if _split_device(e[1])[0] == "window"}
+    for e in contacts:
+        name, num, _kind, _ = _split_device(e[1])
+        label, ending = CONTACT_NAMES.get(name, (name, "y"))
+        if name == "window" and len(windows_in_room) > 1 and num:
+            label = f"{label} {num}"
+        if e[2] == "contact":
+            parts.append(_contact_text(label, ending, e[3]))
+        else:
+            parts.append(f"{label} stan {e[3]}")
+        rendered.append(e)
+
+    # Energy meters: "grzejnik: 234.5 W (licznik 84458.8 Wh)".
+    meters: Dict[Tuple[str, Optional[str]], Dict[str, Tuple[str, str, str, str]]] = {}
+    for e in entries:
+        if e[2] in ("power", "energy"):
+            name, num, _kind, _ = _split_device(e[1])
+            meters.setdefault((name, num), {})[e[2]] = e
+    for (name, num), m in sorted(meters.items(), key=lambda kv: (kv[0][0], kv[0][1] or "")):
+        label = ENERGY_NAMES.get(name, name)
+        if name == "outlet" and num:
+            label = f"{label} {num}"
+        power = m.get("power")
+        energy = m.get("energy")
+        if power and energy:
+            parts.append(f"{label}: {power[3]} (licznik {energy_kwh(energy[3])})")
+        elif power:
+            parts.append(f"{label}: {power[3]}")
+        elif energy:
+            parts.append(f"{label}: licznik {energy_kwh(energy[3])}")
+        rendered.extend(x for x in (power, energy) if x)
+
+    return "; ".join(parts), rendered
+
+
+def _short_timestamp(ts: str) -> str:
+    """'2025-12-27 10:10:00+00:00' -> '2025-12-27 10:10 UTC'."""
+    t = ts.strip()
+    if t.endswith("+00:00"):
+        t = t[: -len("+00:00")]
+    if len(t) >= 19 and t[16:19] == ":00":
+        t = t[:16]
+    return f"{t} UTC"
+
+
+def render_student_facts(
+    snapshot: "SensorSnapshot",
+    *,
+    skip_rooms: Tuple[str, ...] = (),
+) -> Tuple[str, List[Tuple[str, str, str, str]]]:
+    """Compact Student facts + the list of entries rendered (for lossless tests)."""
+    header = f"Stan mieszkania na {_short_timestamp(snapshot.timestamp)}."
+    rooms = snapshot.apartment_rooms or []
+    lines = [header]
+    if rooms:
+        lines.append(f"Pomieszczenia mieszkania: {', '.join(rooms)}.")
+    student_entries = [e for e in snapshot.entries if is_student_entry(e[1], e[2])]
+
+    rendered_all: List[Tuple[str, str, str, str]] = []
+    room_keys = [k for k in STUDENT_ROOM_ORDER if any(e[0] == k for e in student_entries)]
+    room_keys += sorted({e[0] for e in student_entries} - set(room_keys))
+    # Apartment rooms are always listed, so a missing reading is stated, not implied
+    # (A/B test: the Student invented numbers when a metric was simply absent).
+    for key in APARTMENT_ROOM_KEYS:
+        if key not in room_keys and ROOM_LABELS[key] in rooms:
+            room_keys.insert(list(STUDENT_ROOM_ORDER).index(key), key)
+    for key in room_keys:
+        if key in skip_rooms:
+            continue
+        room_entries = [e for e in student_entries if e[0] == key]
+        text, rendered = _render_room(room_entries)
+        if key in APARTMENT_ROOM_KEYS:
+            present = {e[2] for e in room_entries}
+            missing = [AMBIENT_LABELS[m] for m in CORE_METRICS if m not in present]
+            if not room_entries:
+                text = "brak odczytów"
+            elif missing:
+                gap = "brak " + "/".join(missing)
+                text = f"{text}; {gap}" if text else gap
+        if text:
+            lines.append(f"{ROOM_LABELS.get(key, key)}: {text}")
+            rendered_all.extend(rendered)
+    return "\n".join(lines), rendered_all
 
 
 class SensorSimulator:
